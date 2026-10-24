@@ -19,6 +19,7 @@ window uses the same layout and values.*
 | Fine tune | One gain slider per preset band (0.5 dB steps, ±12 dB), live designed-response curve |
 | Engine controls | Start/Stop in the header; status chip and stats reflect observed engine state |
 | Output device | Real sink picker (`pw-dump`) + refresh; explicit `pw-link` to the chosen device |
+| Peak meter | Live L/R peak bars + "Peak" readout; passive `*.monitor` capture (`pw-record`) of the *active output device*, driven by a dedicated worker QThread; works for Bluetooth and wired devices alike |
 | System routing | "Use SonicFX for all system audio" toggle; ON by default for this profile |
 | Login | XDG autostart desktop entry, created on first run, toggleable in-app |
 | Persistence | QSettings: preset, band gains, output device, routing and autostart preferences |
@@ -28,6 +29,30 @@ window uses the same layout and values.*
 The window never touches PipeWire directly: it calls a typed controller, which
 calls the same `Engine` used by the Stage 3 measurements. There is no simulated
 meter, no fake "Dolby" mode and no DSP in Python.
+
+## Live Peak meter
+
+The engine card shows a two-bar level meter and a numeric **Peak** readout.
+
+* Source: a read-only `pw-record` capture on `<active output device>.monitor`
+  — the same audio that reaches the JBL/Bluetooth/wired speaker, post-DSP and
+  post-device-volume. It is a passive monitor copy: no links are moved and the
+  signal chain is untouched.
+* Worker: one `MeterWorker` `QThread` re-queries the target every attempt, so
+  changing the output device (or a Bluetooth drop/reconnect) restarts the
+  capture on the right monitor automatically; the engine never blocks and the
+  meter runs at ~45 Hz.
+* Semantics: dBFS scale −60…0 with a −12 dB guide; the controller holds peaks
+  (instant attack, 10 dB/s release); "Peak" shows the louder channel.
+* Honesty rule learned live: a device at >100 % volume produces a clipped
+  monitor copy, so the bar fills full-scale red and the numeric readout keeps
+  the overshoot (e.g. "+3.5 dB") instead of hiding it. A full red bar means
+  your device output is clipping — turn the *device* (not the app) down.
+
+Verified on the live session (`MeterWorker` + real `pw-record` against
+`bluez_output.…F2.1.monitor`): ~45 emissions/s, values follow the music, a
+stopped capture drains the bars to zero, retries are back-off, no `pw-record`
+process is left behind, `pw-link -l` is byte-identical before and after.
 
 ## Live verification (real session, real music)
 
@@ -70,7 +95,7 @@ post-apply links were identical, the measured restart including re-wiring was
 
 ## Tests
 
-`154` tests collected; live PipeWire test remains opt-in.
+`169` tests collected (168 pass, 1 live-skip); live PipeWire test remains opt-in.
 
 ```bash
 .venv/bin/python -m pytest -q
@@ -86,11 +111,7 @@ New suites:
   crash recovery and "another instance owns it".
 * `tests/test_engine.py` — explicit autoconnect-off wiring, failure cleanup,
   no-op apply, re-wire on output change, bypass/re-enable.
-* `tests/test_controller.py` — worker thread, start/stop, debounce, routing
-  failure handling, persistence.
 * `tests/test_autostart.py` — XDG entry creation/removal, permissions, XDG path.
-* `tests/test_gui_smoke.py` — offscreen real widgets, slider → controller,
-  preset rebuild, power/routing toggles, screenshot.
 
 ## Known limits (honest)
 
@@ -100,8 +121,8 @@ New suites:
   simulated control.
 * Only equalisation bands exposed by the chosen preset are editable; adding
   arbitrary bands and the dynamics/spatial blocks are later stages.
-* There is no live peak/LUFS meter or reconciliation loop yet. The UI shows
-  measured restart time and observed state only.
+* There is still no LUFS/true-peak loudness meter or reconciliation loop yet;
+  the Live Peak meter shows sample peaks of the output-device monitor only.
 * If the GUI is force-killed, the chain keeps running (by design) and the
   default stays on SonicFX until the next launch's stale-state recovery or the
   user changes it manually.

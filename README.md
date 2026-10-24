@@ -22,7 +22,7 @@ desktop app, and can become your **default output** so everything is processed.
 | 1 | Environment audit, dependency scripts | ✅ done (`docs/stage1-environment-audit.md`) |
 | 2 | Offline DSP foundations (design plane) | ✅ done — 71 tests (`docs/stage2-dsp-results.md`) |
 | 3 | Real PipeWire filter-chain path | ✅ verified — real DSP measured, 144.6 ms restart (`docs/stage3-results.md`) |
-| 4 | PySide6 GUI + explicit routing + default sink | ✅ working live (`docs/stage4-gui-routing.md`); live meter, reconciler and soak still open |
+| 4 | PySide6 GUI + explicit routing + default sink | ✅ working live (`docs/stage4-gui-routing.md`); live peak meter ✅, LUFS meter, reconciler and soak still open |
 | 5–7 | Spatial/dynamics depth, profiles/diagnostics, packaging | pending |
 
 ## Run it

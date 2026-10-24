@@ -25,10 +25,13 @@ from sonicfx.ui.theme import repolish
 from sonicfx.ui.widgets import (
     BandRow,
     CurveView,
+    LevelMeter,
     LogoMark,
     PresetCard,
     Stat,
     StatusChip,
+    amplitude_db,
+    format_level_db,
 )
 
 log = get_logger("ui.window")
@@ -310,14 +313,25 @@ class MainWindow(QMainWindow):
         self._stat_gap = Stat("Restart gap", "—")
         self._stat_route = Stat("System default", "Off")
         self._stat_output = Stat("Chain output", "—")
+        self._stat_peak = Stat("Peak", "—")
         for stat in (
             self._stat_state,
             self._stat_gap,
             self._stat_route,
             self._stat_output,
+            self._stat_peak,
         ):
             stats.addWidget(stat, 1)
         engine.addLayout(stats)
+
+        meter_row = QHBoxLayout()
+        meter_row.setSpacing(12)
+        meter_caption = QLabel("Level")
+        meter_caption.setObjectName("StatCaption")
+        meter_row.addWidget(meter_caption)
+        self._meter = LevelMeter()
+        meter_row.addWidget(self._meter, 1)
+        engine.addLayout(meter_row)
         right.addWidget(engine_card)
         return right
 
@@ -341,6 +355,7 @@ class MainWindow(QMainWindow):
         self._c.route_changed.connect(self._on_route)
         self._c.use_default_changed.connect(self._on_use_default)
         self._c.login_autostart_changed.connect(self._on_login_autostart)
+        self._c.meter_changed.connect(self._on_meter)
 
     # -- header / state ----------------------------------------------------
     def _power_clicked(self) -> None:
@@ -403,6 +418,16 @@ class MainWindow(QMainWindow):
     @staticmethod
     def _elide(text: str, limit: int) -> str:
         return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+    # -- peak meter --------------------------------------------------------
+    def _on_meter(self, left: float, right: float) -> None:
+        self._meter.set_levels(left, right)
+        peak = amplitude_db(max(left, right))
+        self._stat_peak.set_value(format_level_db(peak))
+        self._stat_peak.value.setToolTip(
+            f"Left {format_level_db(amplitude_db(left))}, "
+            f"right {format_level_db(amplitude_db(right))}"
+        )
 
     # -- presets / bands ---------------------------------------------------
     def _preset_clicked(self, key: str) -> None:

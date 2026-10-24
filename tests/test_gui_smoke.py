@@ -5,6 +5,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import pytest  # noqa: E402
+
 from PySide6.QtCore import QObject, Qt, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -28,6 +30,7 @@ class FakeController(QObject):
     route_changed = Signal(bool)
     use_default_changed = Signal(bool)
     login_autostart_changed = Signal(bool)
+    meter_changed = Signal(float, float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -74,6 +77,7 @@ class FakeController(QObject):
         self.route_changed.emit(True)
         self.status_changed.emit(self.status)
         self.state_changed.emit(self._running)
+        self.meter_changed.emit(0.0, 0.0)  # engine running, digital silence
 
     def select_preset(self, key: str) -> None:
         self._preset_key = key
@@ -174,3 +178,23 @@ def test_preview_screenshot_renders(qtbot, monkeypatch, tmp_path) -> None:
     path = tmp_path / "window.png"
     assert window.grab().save(str(path)) is True
     assert path.stat().st_size > 10_000
+
+
+def test_peak_meter_renders_live_levels(qtbot, monkeypatch, tmp_path) -> None:
+    controller, window = _window(qtbot, monkeypatch, tmp_path)
+
+    assert window._stat_peak.value.text() == "-∞ dB"  # silence at boot
+    controller.meter_changed.emit(0.5, 0.25)
+    QApplication.processEvents()
+
+    assert window._meter._levels == pytest.approx((0.5, 0.25))
+    assert window._stat_peak.value.text() == "-6.0 dB"
+    assert "right -12.0 dB" in window._stat_peak.value.toolTip()
+
+    # A device running above 100 % volume clips the monitor copy; the bar
+    # stops at full scale while the readout keeps the honest over-0dB value.
+    controller.meter_changed.emit(1.5, 0.4)
+    QApplication.processEvents()
+
+    assert window._meter._levels == pytest.approx((1.0, 0.4))
+    assert window._stat_peak.value.text() == "+3.5 dB"

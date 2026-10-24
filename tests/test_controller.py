@@ -1,4 +1,4 @@
-"""Controller integration tests: threading, debounce and routing safety."""
+"""Controller integration tests: threading, debounce, routing safety, metering."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest  # noqa: E402
-from PySide6.QtCore import QSettings  # noqa: E402
+from PySide6.QtCore import QObject, QSettings, Signal  # noqa: E402
 
 from sonicfx.audio.engine import EngineError, EngineStatus  # noqa: E402
 from sonicfx.pipewire.routing import DefaultRoute, RoutingError  # noqa: E402
@@ -95,6 +95,33 @@ class FakeRouter:
         return self.active
 
 
+class FakeMeterWorker(QObject):
+    """MeterWorker stand-in: same lifecycle surface, never captures."""
+
+    levels = Signal(float, float)
+    instances: list[FakeMeterWorker] = []
+
+    def __init__(self, target_provider) -> None:
+        super().__init__()
+        self.target_provider = target_provider
+        FakeMeterWorker.instances.append(self)
+        self.start_calls = 0
+        self.refresh_calls = 0
+        self.stopped = False
+
+    def start(self) -> None:
+        self.start_calls += 1
+
+    def refresh(self) -> None:
+        self.refresh_calls += 1
+
+    def stop(self) -> None:
+        self.stopped = True
+
+    def wait(self, _ms: int = 0) -> bool:
+        return True
+
+
 @pytest.fixture
 def controller(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(
@@ -106,6 +133,8 @@ def controller(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(controller_module.autostart, "is_enabled", lambda: False)
     monkeypatch.setattr(controller_module.autostart, "enable", lambda: None)
     monkeypatch.setattr(controller_module.autostart, "disable", lambda: None)
+    monkeypatch.setattr(controller_module, "MeterWorker", FakeMeterWorker)
+    FakeMeterWorker.instances = []
 
     settings = QSettings(
         str(tmp_path / "settings.ini"), QSettings.Format.IniFormat
@@ -200,3 +229,67 @@ def test_band_gains_persist_as_json(qtbot, controller, tmp_path) -> None:
     values = json.loads(raw)
     assert values[1] == -2.5
     assert ctrl.is_custom() is True
+
+
+def test_meter_worker_starts_and_tracks_levels(qtbot, controller) -> None:
+    ctrl, _engine, _router = controller
+    worker = FakeMeterWorker.instances[-1]
+    assert worker.start_calls == 1
+    assert worker.target_provider() == ""  # engine stopped: meter off
+
+    seen: list[tuple[float, float]] = []
+    ctrl.meter_changed.connect(lambda left, right: seen.append((left, right)))
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+    assert worker.refresh_calls >= 1
+    assert worker.target_provider() == "alsa_output.test.monitor"
+
+    with qtbot.waitSignal(ctrl.meter_changed, timeout=2_000):
+        worker.levels.emit(0.5, 0.25)
+    assert seen[-1] == pytest.approx((0.5, 0.25))
+    assert ctrl.meter_peak_db[0] == pytest.approx(-6.02, abs=0.02)
+    assert ctrl.meter_peak_db[1] == pytest.approx(-12.04, abs=0.02)
+
+    qtbot.waitUntil(lambda: len(seen) >= 2, timeout=2_000)  # decay tick
+    assert seen[-1][0] < 0.5
+
+
+def test_meter_resets_when_engine_stops(qtbot, controller) -> None:
+    ctrl, _engine, _router = controller
+    worker = FakeMeterWorker.instances[-1]
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+    with qtbot.waitSignal(ctrl.meter_changed, timeout=2_000):
+        worker.levels.emit(0.8, 0.7)
+
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.stop_engine()
+
+    assert ctrl.meter_peak_db == (-60.0, -60.0)
+
+
+def test_meter_target_switches_with_output(qtbot, controller, monkeypatch) -> None:
+    ctrl, _engine, _router = controller
+    worker = FakeMeterWorker.instances[-1]
+    monkeypatch.setattr(
+        controller_module,
+        "list_sinks",
+        lambda: [
+            SinkInfo("alsa_output.test", 1, "Test Speakers", True),
+            SinkInfo("bluez.speaker", 2, "JBL Flip 5", False),
+        ],
+    )
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+
+    ctrl.set_output("bluez.speaker")
+
+    assert worker.target_provider() == "bluez.speaker.monitor"
+    assert worker.refresh_calls >= 2
+
+
+def test_meter_worker_stops_with_controller(controller) -> None:
+    ctrl, _engine, _router = controller
+    worker = FakeMeterWorker.instances[-1]
+    ctrl.shutdown()
+    assert worker.stopped is True

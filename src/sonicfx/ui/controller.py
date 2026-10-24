@@ -6,12 +6,17 @@ DSP edits into supervised restarts, and keeps system-wide routing safe:
 * routing is only attempted after the chain is running and wired;
 * the previous default sink is restored on stop, routing-off, apply failure,
   app exit, and after a crash at next launch;
-* engine work runs in a worker thread, so the window never blocks on PipeWire.
+* engine work runs in a worker thread, so the window never blocks on PipeWire;
+* a second background worker reads a passive ``*.monitor`` capture of the
+  active output device and drives the live Peak meter (never the audio path).
 """
 from __future__ import annotations
 
 import json
+import math
 import os
+import threading
+import time
 from dataclasses import replace
 
 from PySide6.QtCore import (
@@ -29,8 +34,10 @@ from sonicfx import autostart
 from sonicfx.audio.engine import Engine, EngineStatus
 from sonicfx.dsp.filters import BiquadBand, FilterKind
 from sonicfx.logging_setup import get_logger
+from sonicfx.pipewire import tap as tap_module
 from sonicfx.pipewire.chain import ChainSpec
 from sonicfx.pipewire.routing import DefaultSinkRouter, RoutingError
+from sonicfx.pipewire.tap import LevelTap, TapError
 from sonicfx.pipewire.wiring import SinkInfo, default_sink_name, list_sinks
 from sonicfx.profiles.presets import DEFAULT_PRESET_KEY, get_preset, preset_keys
 
@@ -39,6 +46,21 @@ log = get_logger("ui.controller")
 _SHAPED = frozenset({FilterKind.PEAKING, FilterKind.LOW_SHELF, FilterKind.HIGH_SHELF})
 _GAIN_LIMIT_DB = 12.0
 _DEBOUNCE_MS = 300
+
+# Peak meter: held-peak display semantics (dB domain).
+_PEAK_FLOOR_DB = -60.0
+_PEAK_DECAY_DB_PER_S = 10.0
+_METER_TICK_MS = 100
+
+
+def _amp_to_db(amplitude: float) -> float:
+    return _PEAK_FLOOR_DB if amplitude <= 0.0 else max(
+        _PEAK_FLOOR_DB, 20.0 * math.log10(amplitude)
+    )
+
+
+def _db_to_amp(db: float) -> float:
+    return 0.0 if db <= _PEAK_FLOOR_DB else 10.0 ** (db / 20.0)
 
 
 class EngineWorker(QObject):
@@ -80,6 +102,102 @@ class EngineWorker(QObject):
         self._engine.shutdown()
 
 
+class MeterWorker(QThread):
+    """Background monitor reader for the live Peak meter.
+
+    One attempt owns one :class:`LevelTap` on a ``*.monitor`` node. The loop
+    asks a provider for the current target (empty = meter off), captures it,
+    emits peaks, and restarts with a fresh tap when the stream ends, when the
+    target disappears, or when :meth:`refresh` signals a routing change. The
+    GUI thread only ever sees :attr:`levels`, as raw amplitudes.
+    """
+
+    levels = Signal(float, float)
+
+    READ_TIMEOUT_S = 0.15
+    RETRY_DELAY_S = 0.75
+    IDLE_WAIT_S = 0.2
+    MIN_LIFETIME_S = 1.0  # shorter means the capture failed to start
+
+    def __init__(
+        self,
+        target_provider,
+        tap_factory=LevelTap,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._target_provider = target_provider
+        self._tap_factory = tap_factory
+        self._refresh = threading.Event()
+        self._stop = threading.Event()
+
+    def refresh(self) -> None:
+        """Restart the capture: the chain, output device or state changed."""
+        self._refresh.set()
+
+    def stop(self) -> None:
+        """Stop the loop; pair with :meth:`wait` from the caller."""
+        self._stop.set()
+        self._refresh.set()
+
+    def run(self) -> None:
+        capturing = False
+        while True:
+            if self._stop.is_set():
+                break
+            target = self._target_provider()
+            if not target:
+                self._refresh.clear()
+                if capturing:
+                    capturing = False  # one final drain-to-zero, then silence
+                    self.levels.emit(0.0, 0.0)
+                if self._stop.wait(self.IDLE_WAIT_S):
+                    break
+                continue
+            self._refresh.clear()
+            started = time.monotonic()
+            try:
+                tap = self._tap_factory(target)
+                tap.start()
+            except TapError as exc:
+                log.warning("peak meter target %r unavailable: %s", target, exc)
+                self.levels.emit(0.0, 0.0)
+                if self._stop.wait(self.RETRY_DELAY_S):
+                    break
+                continue
+            capturing = True
+            try:
+                outcome = self._drain(tap)
+            except Exception:  # noqa: BLE001 - the meter must never crash Qt
+                log.exception("peak meter drain failed")
+                self.levels.emit(0.0, 0.0)
+                outcome = "dead"
+            lifetime = time.monotonic() - started
+            tap.stop()
+            if outcome == "stop":
+                break
+            backoff = 0.0 if lifetime >= self.MIN_LIFETIME_S else self.RETRY_DELAY_S
+            if backoff and self._stop.wait(backoff):
+                break
+        self.levels.emit(0.0, 0.0)
+
+    def _drain(self, tap: LevelTap) -> str:
+        """Read one tap until stop/refresh/target-change/stream end."""
+        while True:
+            if self._stop.is_set():
+                return "stop"
+            if self._refresh.is_set():
+                self._refresh.clear()
+                return "refresh"
+            if not self._target_provider():
+                return "retarget"
+            levels = tap.read(timeout=self.READ_TIMEOUT_S)
+            if levels is None:
+                self.levels.emit(0.0, 0.0)  # stream is over: drain the bar
+                return "dead"
+            self.levels.emit(levels[0], levels[1])
+
+
 class Controller(QObject):
     """Application controller; the window only reads and calls this surface."""
 
@@ -91,6 +209,7 @@ class Controller(QObject):
     error = Signal(str)
     state_changed = Signal(bool)
     busy_changed = Signal(bool)
+    meter_changed = Signal(float, float)
 
     preset_changed = Signal(str)
     bands_changed = Signal(object)
@@ -152,6 +271,16 @@ class Controller(QObject):
         )
         self._thread.start()
 
+        # Live peak meter: a separate worker reads a passive *.monitor* copy of
+        # the active output device; the held-peak state and smoothing live here.
+        self._peak_db = (_PEAK_FLOOR_DB, _PEAK_FLOOR_DB)
+        self._meter_worker = MeterWorker(self._meter_target)
+        self._meter_worker.levels.connect(self._on_meter_levels)
+        self._meter_worker.start()
+        self._meter_tick = QTimer(self)
+        self._meter_tick.setInterval(_METER_TICK_MS)
+        self._meter_tick.timeout.connect(self._decay_and_emit)
+
     # -- read-only state for the window ------------------------------------
     @property
     def preset_key(self) -> str:
@@ -185,6 +314,11 @@ class Controller(QObject):
     def route_active(self) -> bool:
         return self._route_active
 
+    @property
+    def meter_peak_db(self) -> tuple[float, float]:
+        """Held peak levels in dBFS (L, R); ``-60`` means digital silence."""
+        return self._peak_db
+
     def login_autostart_enabled(self) -> bool:
         return self._login_autostart
 
@@ -213,12 +347,21 @@ class Controller(QObject):
             QTimer.singleShot(250, self.start_engine)
 
     def shutdown(self) -> None:
-        """Stop the engine, restore routing, and join the worker thread."""
+        """Stop the engine, restore routing, and join the worker threads."""
         if self._shutdown:
             return
         self._shutdown = True
         self._debounce.stop()
         self._pending_apply = False
+        self._meter_tick.stop()
+        self._peak_db = (_PEAK_FLOOR_DB, _PEAK_FLOOR_DB)
+        self.meter_changed.emit(0.0, 0.0)
+        self._meter_worker.stop()
+        if not self._meter_worker.wait(2_000):
+            log.warning("meter worker did not finish in time; terminating")
+            self._meter_worker.terminate()
+            if not self._meter_worker.wait(1_000):
+                log.error("meter worker thread refused to exit")
         self._restore_route()
         if self._thread.isRunning():
             QMetaObject.invokeMethod(
@@ -329,6 +472,7 @@ class Controller(QObject):
         self._settings.setValue("output_device", name)
         self.output_changed.emit(name)
         if self._running:
+            self._meter_worker.refresh()  # tap the new device's monitor
             self._schedule_apply()
 
     def refresh_sinks(self) -> None:
@@ -338,6 +482,8 @@ class Controller(QObject):
             chosen = next((sink.name for sink in sinks if sink.is_default), "")
             self._output = chosen or (names[0] if names else "")
             self._settings.setValue("output_device", self._output)
+            if self._running:
+                self._meter_worker.refresh()  # follow the device change
         self.sinks_changed.emit(sinks)
         self.output_changed.emit(self._output)
 
@@ -382,6 +528,13 @@ class Controller(QObject):
         self._status = status
         self._running = status.running
         self._set_busy(False)
+        self._meter_worker.refresh()
+        if self._running:
+            self._meter_tick.start()
+        else:
+            self._meter_tick.stop()
+            self._peak_db = (_PEAK_FLOOR_DB, _PEAK_FLOOR_DB)
+            self.meter_changed.emit(0.0, 0.0)
         if status.running:
             if self._use_default:
                 self._sync_route(status.sink_name)
@@ -404,10 +557,55 @@ class Controller(QObject):
         self._running = status.running
         self._set_busy(False)
         self._pending_apply = False
+        self._meter_worker.refresh()
+        if self._running:
+            self._meter_tick.start()
+        else:
+            self._meter_tick.stop()
+            self._peak_db = (_PEAK_FLOOR_DB, _PEAK_FLOOR_DB)
+            self.meter_changed.emit(0.0, 0.0)
         self._restore_route()
         self.state_changed.emit(self._running)
         self.status_changed.emit(status)
         self._show_error(message)
+
+    # -- peak meter ---------------------------------------------------------
+    def _meter_target(self) -> str:
+        """Current ``*.monitor`` capture target; empty while metering is off.
+
+        The tap pulls the read-only monitor copy of the *active output device*
+        (so Bluetooth and wired devices behave the same); with no device known
+        it falls back to the chain's own monitor.
+        """
+        if self._shutdown or not self._running:
+            return ""
+        output = self._output or ""
+        if output:
+            return tap_module.monitor_target(output)
+        return tap_module.monitor_target("sonicfx_sink")
+
+    @Slot(float, float)
+    def _on_meter_levels(self, left: float, right: float) -> None:
+        """Raw peaks from the worker: instant attack on the held values."""
+        self._peak_db = (
+            max(self._peak_db[0], _amp_to_db(left)),
+            max(self._peak_db[1], _amp_to_db(right)),
+        )
+        self.meter_changed.emit(
+            _db_to_amp(self._peak_db[0]), _db_to_amp(self._peak_db[1])
+        )
+
+    @Slot()
+    def _decay_and_emit(self) -> None:
+        """Release the held peaks (standard-ish 10 dB/s) and report them."""
+        drop = _PEAK_DECAY_DB_PER_S * (_METER_TICK_MS / 1000.0)
+        self._peak_db = (
+            max(_PEAK_FLOOR_DB, self._peak_db[0] - drop),
+            max(_PEAK_FLOOR_DB, self._peak_db[1] - drop),
+        )
+        self.meter_changed.emit(
+            _db_to_amp(self._peak_db[0]), _db_to_amp(self._peak_db[1])
+        )
 
     # -- applying changes --------------------------------------------------
     def _schedule_apply(self) -> None:

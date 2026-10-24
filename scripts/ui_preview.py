@@ -48,6 +48,7 @@ class PreviewController(QObject):
     route_changed = Signal(bool)
     use_default_changed = Signal(bool)
     login_autostart_changed = Signal(bool)
+    meter_changed = Signal(float, float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -106,6 +107,9 @@ class PreviewController(QObject):
         self.login_autostart_changed.emit(True)
         self.route_changed.emit(True)
         self.status_changed.emit(self._status)
+        self.state_changed.emit(self._running)
+        # Sample "music playing" peaks so the meter is visible in the preview.
+        self.meter_changed.emit(0.55, 0.42)
 
     def select_preset(self, key: str) -> None:
         self._preset_key = key

@@ -1,6 +1,8 @@
 """Reusable widgets for the SonicFX GUI (no PipeWire access here)."""
 from __future__ import annotations
 
+import math
+
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen
@@ -38,6 +40,23 @@ def format_freq(freq: float) -> str:
     if freq >= 1_000:
         return f"{freq / 1_000:.2f} kHz".replace(".00 kHz", " kHz")
     return f"{freq:.0f} Hz"
+
+
+LEVEL_FLOOR_DB = -60.0  # meter scale bottom; must match the controller's floor
+
+
+def amplitude_db(amplitude: float) -> float:
+    """Level in dBFS of a 0..1 amplitude (floored at the meter bottom)."""
+    if amplitude <= 0.0:
+        return LEVEL_FLOOR_DB
+    return max(LEVEL_FLOOR_DB, 20.0 * math.log10(amplitude))
+
+
+def format_level_db(db: float) -> str:
+    """UI text for a dBFS level; anything at the floor reads digital silence."""
+    if db <= -59.95:
+        return "-∞ dB"
+    return f"{db:+.1f} dB"
 
 
 class LogoMark(QWidget):
@@ -331,6 +350,76 @@ class CurveView(QWidget):
             int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter),
             "48 kHz",
         )
+        painter.end()
+
+
+class LevelMeter(QWidget):
+    """Two stacked peak bars for the processed output (display only).
+
+    Values are peak amplitudes in 0..1 fed by the controller from a passive
+    monitor capture. The scale is dBFS from −60 dB to 0 dB: green up to the
+    −12 dB guide, yellow then red at the top, plus a bright cap at the held
+    level. The widget does no math on audio — it only renders what it gets.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._levels = (0.0, 0.0)
+        self.setFixedHeight(32)
+        self.setMinimumWidth(140)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setAccessibleName("Output peak meter")
+        self.setToolTip(
+            "Live peak of the processed output (left bar above right bar), "
+            "-60…0 dBFS; a full red bar means the device output clips "
+            "(e.g. system volume above 100 %)"
+        )
+
+    def set_levels(self, left: float, right: float) -> None:
+        self._levels = (max(0.0, min(1.0, float(left))), max(0.0, min(1.0, float(right))))
+        self.update()
+
+    def _fraction(self, amplitude: float) -> float:
+        if amplitude <= 0.0:
+            return 0.0
+        db = max(LEVEL_FLOOR_DB, 20.0 * math.log10(amplitude))
+        return max(0.0, min(1.0, (db - LEVEL_FLOOR_DB) / -LEVEL_FLOOR_DB))
+
+    def paintEvent(self, _event) -> None:  # noqa: N802 - Qt API
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        width, height = float(self.width()), float(self.height())
+        pad, gap = 6.0, 4.0
+        bar_w, bar_h = width - pad * 2.0, (height - pad * 2.0 - gap) / 2.0
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#0e1116"))
+        painter.drawRoundedRect(QRectF(0.0, 0.0, width, height), 7.0, 7.0)
+
+        gradient = QLinearGradient(pad, 0.0, pad + bar_w, 0.0)
+        gradient.setColorAt(0.0, QColor(COLORS["success"]))
+        gradient.setColorAt(0.80, QColor(COLORS["success"]))
+        gradient.setColorAt(0.90, QColor(COLORS["warning"]))
+        gradient.setColorAt(1.0, QColor(COLORS["danger"]))
+
+        # -12 dB guide across both bars.
+        guide_x = pad + bar_w * 0.8
+        painter.setBrush(QColor(255, 255, 255, 26))
+        painter.drawRect(QRectF(guide_x - 0.5, pad - 3.0, 1.0, height - 2.0 * pad + 6.0))
+
+        for row, amplitude in enumerate(self._levels):
+            y = pad + row * (bar_h + gap)
+            frac = self._fraction(amplitude)
+            fill_w = bar_w * frac
+            painter.setBrush(QColor("#171b27"))
+            painter.drawRoundedRect(QRectF(pad, y, bar_w, bar_h), 3.0, 3.0)
+            if fill_w > 0.5:
+                painter.setBrush(gradient)
+                painter.drawRoundedRect(
+                    QRectF(pad, y, max(fill_w, bar_h), bar_h), 3.0, 3.0
+                )
+                painter.setBrush(QColor(238, 242, 246, 215))
+                painter.drawRect(QRectF(pad + fill_w - 2.0, y, 2.0, bar_h))
         painter.end()
 
 

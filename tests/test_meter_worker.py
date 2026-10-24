@@ -125,6 +125,16 @@ def test_worker_recovers_after_failed_start(qtbot) -> None:
         assert worker.wait(5_000) is True
 
 
+def test_worker_retargets_if_capture_starts_on_stale_device() -> None:
+    tap = ScriptedTap("old.monitor", None)
+    worker = MeterWorker(lambda: "new.monitor", tap_factory=lambda _target: tap)
+
+    # Simulate the refresh flag being consumed just before the tap starts: the
+    # drain still must notice that the requested target no longer matches.
+    assert worker._drain(tap, "old.monitor") == "retarget"
+    assert tap.started is False
+
+
 def test_worker_stays_quiet_until_a_target_appears(qtbot) -> None:
     taps: list[ScriptedTap] = []
     enabled = [False]

@@ -267,6 +267,11 @@ def test_meter_resets_when_engine_stops(qtbot, controller) -> None:
 
     assert ctrl.meter_peak_db == (-60.0, -60.0)
 
+    # A capture result already queued when the engine stopped must not wake a
+    # meter that was just reset to silence.
+    worker.levels.emit(0.8, 0.7)
+    assert ctrl.meter_peak_db == (-60.0, -60.0)
+
 
 def test_meter_target_switches_with_output(qtbot, controller, monkeypatch) -> None:
     ctrl, _engine, _router = controller
@@ -286,6 +291,28 @@ def test_meter_target_switches_with_output(qtbot, controller, monkeypatch) -> No
 
     assert worker.target_provider() == "bluez.speaker.monitor"
     assert worker.refresh_calls >= 2
+
+
+def test_refresh_rewires_running_engine_after_device_disappears(
+    qtbot, controller, monkeypatch
+) -> None:
+    ctrl, engine, _router = controller
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+    starts = len(engine.apply_calls)
+
+    monkeypatch.setattr(
+        controller_module,
+        "list_sinks",
+        lambda: [SinkInfo("bluez.replacement", 9, "Replacement Speaker", False)],
+    )
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.refresh_sinks()
+        ctrl.apply_now()
+
+    assert ctrl.output == "bluez.replacement"
+    assert len(engine.apply_calls) == starts + 1
+    assert engine.apply_calls[-1][1] == "bluez.replacement"
 
 
 def test_meter_worker_stops_with_controller(controller) -> None:

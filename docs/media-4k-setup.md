@@ -31,6 +31,9 @@ stays native.
   Gen 9.5; `libva2`, `libva-drm2`, `mesa-va-drivers` as support/fallback.
 * `ffmpeg` — codecs and conversion.
 * `mpv` + `celluloid` — player and GTK movie-player front end.
+* `yt-dlp` — the YouTube URL extractor mpv uses for online videos. Without it,
+  opening a YouTube link makes mpv exit with “Failed to recognize file format”
+  (it is not a crash and leaves no core dump).
 * `gstreamer1.0-vaapi`, `gstreamer1.0-libav`,
   `gstreamer1.0-plugins-good`, `gstreamer1.0-plugins-bad`.
 * `libva-utils` (provides `vainfo`) when available.
@@ -49,6 +52,8 @@ H.264/HEVC/VP9 playback with mpv/ffmpeg and is deliberately left out.)
 vainfo | grep -E "Driver version|HEVC|VP9"
 mpv --hwdec=vaapi '/path/to/movie.mkv'   # Ctrl+Shift+I shows decode stats
 celluloid '/path/to/movie.mkv'
+yt-dlp --version                         # URL playback needs this
+mpv 'https://youtu.be/RhRiIshrDv8'       # real YouTube smoke test
 ```
 
 In Firefox: `about:support` → *Graphics* → look for VA-API entries; codec
@@ -62,13 +67,14 @@ back in once on Wayland for the environment to settle).
 | `vainfo` fails with iHD errors | Try the legacy driver: `LIBVA_DRIVER_NAME=i965 vainfo`; if that works, run players with `LIBVA_DRIVER_NAME=i965` |
 | mpv falls back to software (`hwdec` warning) | `mpv --hwdec=vaapi --msg-level=vd=v` to see the reason; usually a missing profile (e.g. AV1) |
 | Firefox still software-decodes | Confirm `media.ffmpeg.vaapi.enabled` in `about:config`; snap Firefox needs a session restart; check `about:support` for blocklist flags |
+| mpv exits immediately on a YouTube link (`Failed to recognize file format`) | Install/update `yt-dlp`: `sudo apt install yt-dlp`; run `mpv --msg-level=ytdl_hook=debug URL` if it still fails |
 | 4K YouTube stutters in Firefox | Prefer 1440p on AV1-only videos; VP9 4K is hardware-decoded |
 | External 4K TV limited to 30 Hz | HDMI 1.4 limit; use the USB-C/DP output for 4K@60 |
 
 ## Uninstall
 
 ```bash
-sudo apt remove --purge mpv celluloid intel-media-va-driver libva-utils \
+sudo apt remove --purge mpv celluloid yt-dlp intel-media-va-driver libva-utils \
     gstreamer1.0-vaapi
 rm -f ~/.config/mpv/mpv.conf ~/.config/mpv/mpv.conf.sonicfx-backup
 # Firefox: remove the two user_pref lines from each profile's user.js

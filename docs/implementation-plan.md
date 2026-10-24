@@ -76,7 +76,7 @@ the audit flags it. Nothing fakes it.
 | Bass punch | low-shelf (60–90 Hz) + optional Calf bass-enhancer harmonic stage, limiter-protected |
 | Concert hall | Calf Reverb LV2 (decay 1.2–2.4 s, damping, wet mix presets) |
 | Loudness match | meter tap LUFS-I → slow target gain (bounded ±6 dB, no upward compression) |
-| Presets | Movies, Songs, Night, Headphones, Podcast/Voice, Gaming, Flat + user presets |
+| Presets | Best All In One, Movies, Songs, Night, Headphones, Podcast/Voice, Gaming, Bass, Flat + user presets |
 | Noise reduction (mic) | optional, opt-in build of rnnoise-LADSPA (documented, not bundled) |
 | Loudness | meter tap: K-weighted LUFS-I (Python, 100 ms update on tap only) + optional slow target-gain correction |
 | Meters / diagnostics | bounded low-rate monitor capture (not the audio path); GR estimated, clip detection from tap peaks |

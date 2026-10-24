@@ -54,6 +54,23 @@ def test_night_reduces_bass_and_treble() -> None:
     assert high and high[0].gain_db < 0.0
 
 
+def test_best_all_in_one_balances_bass_presence_and_air() -> None:
+    bands = get_preset("best_all_in_one").bands
+    assert any(
+        band.kind is FilterKind.LOW_SHELF and band.gain_db > 0.0 for band in bands
+    )
+    assert any(
+        1_500.0 <= band.freq <= 3_000.0 and band.gain_db > 0.0 for band in bands
+    )
+    assert any(
+        band.kind is FilterKind.HIGH_SHELF and band.gain_db > 0.0 for band in bands
+    )
+    # The all-rounder must not be bass-only: it also clears the mud region.
+    assert any(
+        250.0 <= band.freq <= 600.0 and band.gain_db < 0.0 for band in bands
+    )
+
+
 def test_flat_is_neutral() -> None:
     assert get_preset("flat").bands == ()
 

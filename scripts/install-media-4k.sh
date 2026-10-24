@@ -53,6 +53,7 @@ CORE_PKGS=(
     mesa-va-drivers           # OpenGL/gallium VA-API fallback
     ffmpeg
     mpv
+    yt-dlp                    # required by mpv for YouTube/URL playback
     celluloid                 # friendly GTK movie player built on mpv
     gstreamer1.0-vaapi
     gstreamer1.0-libav
@@ -166,6 +167,11 @@ else
 fi
 echo "Internal panel                 : ${PANEL_MODE}"
 echo "Firefox profiles configured    : ${firefox_profiles}"
+if command -v yt-dlp >/dev/null 2>&1; then
+    echo "YouTube URL support            : yt-dlp $(yt-dlp --version)"
+else
+    echo "YouTube URL support            : MISSING — install yt-dlp" >&2
+fi
 echo
 echo "Test a movie:"
 echo "  mpv --hwdec=vaapi '/path/to/movie.mkv'      # press Ctrl+Shift+I for stats"

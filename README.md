@@ -1,9 +1,10 @@
 # SonicFX Ultimate
 
 A free, local, open-source **system-wide audio enhancer for Ubuntu / Linux Mint
-(PipeWire)**. It runs real-time parametric EQ presets (cinema, music, night,
-headphones, voice, gaming, bass) on live audio from browsers, VLC, games and any
-desktop app, and can become your **default output** so everything is processed.
+(PipeWire)**. It runs real-time parametric EQ presets (all-in-one, cinema, music,
+night, headphones, voice, gaming, bass) on live audio from browsers, VLC, games
+and any desktop app, and can become your **default output** so everything is
+processed.
 
 * No subscriptions, accounts, ads, paid APIs or cloud: all local processing.
 * Real DSP in the PipeWire real-time thread (C biquad filters) — no Python in
@@ -35,7 +36,7 @@ On first launch the window starts the engine, selects the current default
 hardware output and — because this profile opted in — makes **SonicFX the
 default output**. Apps keep playing normally; their audio is routed through
 SonicFX and then to the chosen device. The **Songs / Music** preset is the first
-choice, with all other presets one click away.
+choice, with **Best All In One** and every other preset one click away.
 
 * Toggle **Use SonicFX for all system audio** at any time.
 * **Stop engine** (or closing the window) restores the previous default device
@@ -74,10 +75,10 @@ music on the same laptop:
 sudo scripts/install-media-4k.sh
 ```
 
-It installs Intel iHD VA-API hardware decoding, mpv + Celluloid, GStreamer
-VA-API plugins and Firefox VA-API preferences. Details, verification commands
-and troubleshooting: `docs/media-4k-setup.md`. It does not change your default
-audio devices or SonicFX routing.
+It installs Intel iHD VA-API hardware decoding, mpv + Celluloid, `yt-dlp` for
+YouTube/URL playback, GStreamer VA-API plugins and Firefox VA-API preferences.
+Details, verification commands and troubleshooting: `docs/media-4k-setup.md`.
+It does not change your default audio devices or SonicFX routing.
 
 ## Repository layout
 
@@ -93,7 +94,7 @@ src/sonicfx/
   database/       # SQLite persistence (Stage 6)
   diagnostics/    # environment audit, logs, recovery (Stage 1/6)
 docs/             # architecture, stage results, limitations, licenses
-tests/            # pytest suites (154 tests; live PipeWire suite opt-in)
+tests/            # pytest suites (173 tests; live PipeWire suite opt-in)
 scripts/          # install / setup / probe / preview / packaging
 ```
 

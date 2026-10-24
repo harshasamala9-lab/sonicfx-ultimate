@@ -42,6 +42,21 @@ PRESETS: tuple[Preset, ...] = (
         bands=(),
     ),
     Preset(
+        key="best_all_in_one",
+        label="Best All In One",
+        description=(
+            "Punchy bass, clear dialogue and open treble — one balanced curve "
+            "for everything."
+        ),
+        bands=(
+            BiquadBand(FilterKind.LOW_SHELF, 80.0, 3.0, 0.7),
+            BiquadBand(FilterKind.PEAKING, 380.0, -1.5, 1.0),
+            BiquadBand(FilterKind.PEAKING, 2_200.0, 2.0, 1.05),
+            BiquadBand(FilterKind.PEAKING, 4_500.0, 1.0, 1.4),
+            BiquadBand(FilterKind.HIGH_SHELF, 11_000.0, 1.5, 0.7),
+        ),
+    ),
+    Preset(
         key="movies",
         label="Movies / Cinema",
         description=(

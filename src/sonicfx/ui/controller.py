@@ -167,7 +167,7 @@ class MeterWorker(QThread):
                 continue
             capturing = True
             try:
-                outcome = self._drain(tap)
+                outcome = self._drain(tap, target)
             except Exception:  # noqa: BLE001 - the meter must never crash Qt
                 log.exception("peak meter drain failed")
                 self.levels.emit(0.0, 0.0)
@@ -181,7 +181,7 @@ class MeterWorker(QThread):
                 break
         self.levels.emit(0.0, 0.0)
 
-    def _drain(self, tap: LevelTap) -> str:
+    def _drain(self, tap: LevelTap, target: str) -> str:
         """Read one tap until stop/refresh/target-change/stream end."""
         while True:
             if self._stop.is_set():
@@ -189,7 +189,11 @@ class MeterWorker(QThread):
             if self._refresh.is_set():
                 self._refresh.clear()
                 return "refresh"
-            if not self._target_provider():
+            # A refresh can be consumed while the capture is still starting;
+            # compare the target itself so a device change is never lost and
+            # the meter cannot keep reading the old device's monitor.
+            current = self._target_provider()
+            if not current or current != target:
                 return "retarget"
             levels = tap.read(timeout=self.READ_TIMEOUT_S)
             if levels is None:
@@ -480,10 +484,15 @@ class Controller(QObject):
         names = [sink.name for sink in sinks]
         if self._output not in names:
             chosen = next((sink.name for sink in sinks if sink.is_default), "")
+            previous = self._output
             self._output = chosen or (names[0] if names else "")
             self._settings.setValue("output_device", self._output)
-            if self._running:
-                self._meter_worker.refresh()  # follow the device change
+            if self._running and self._output != previous:
+                # The old device vanished: follow it with the meter and rewire
+                # the running chain instead of silently pointing at a dead sink.
+                self._meter_worker.refresh()
+                if self._output:
+                    self._schedule_apply()
         self.sinks_changed.emit(sinks)
         self.output_changed.emit(self._output)
 
@@ -587,6 +596,10 @@ class Controller(QObject):
     @Slot(float, float)
     def _on_meter_levels(self, left: float, right: float) -> None:
         """Raw peaks from the worker: instant attack on the held values."""
+        if self._shutdown or not self._running:
+            # A capture result can already be queued when the engine stops;
+            # never let it repopulate a meter that was just reset to silence.
+            return
         self._peak_db = (
             max(self._peak_db[0], _amp_to_db(left)),
             max(self._peak_db[1], _amp_to_db(right)),

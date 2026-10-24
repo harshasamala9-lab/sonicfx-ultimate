@@ -52,7 +52,7 @@ class PreviewController(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self._preset_key = "songs"
+        self._preset_key = "best_all_in_one"
         self._output = "bluez_output.30_C0_1B_D2_9B_F2.1"
         self._running = True
         self._busy = False

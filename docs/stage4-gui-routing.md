@@ -15,7 +15,7 @@ window uses the same layout and values.*
 | Area | Implementation |
 |---|---|
 | Window | PySide6 single-window "SonicFX Ultimate" UI, dark theme, offscreen-renderable |
-| Presets | 8 built-in cards; selecting one applies its real band set |
+| Presets | 9 built-in cards (including **Best All In One**); selecting one applies its real band set |
 | Fine tune | One gain slider per preset band (0.5 dB steps, ±12 dB), live designed-response curve |
 | Engine controls | Start/Stop in the header; status chip and stats reflect observed engine state |
 | Output device | Real sink picker (`pw-dump`) + refresh; explicit `pw-link` to the chosen device |
@@ -38,10 +38,11 @@ The engine card shows a two-bar level meter and a numeric **Peak** readout.
   — the same audio that reaches the JBL/Bluetooth/wired speaker, post-DSP and
   post-device-volume. It is a passive monitor copy: no links are moved and the
   signal chain is untouched.
-* Worker: one `MeterWorker` `QThread` re-queries the target every attempt, so
-  changing the output device (or a Bluetooth drop/reconnect) restarts the
-  capture on the right monitor automatically; the engine never blocks and the
-  meter runs at ~45 Hz.
+* Worker: one `MeterWorker` `QThread` re-queries the target every attempt and
+  compares it with the active capture, so changing the output device (or a
+  Bluetooth drop/reconnect) restarts the capture on the right monitor even if
+  the change lands during startup; the engine never blocks and the meter runs
+  at ~45 Hz.
 * Semantics: dBFS scale −60…0 with a −12 dB guide; the controller holds peaks
   (instant attack, 10 dB/s release); "Peak" shows the louder channel.
 * Honesty rule learned live: a device at >100 % volume produces a clipped
@@ -95,7 +96,7 @@ post-apply links were identical, the measured restart including re-wiring was
 
 ## Tests
 
-`169` tests collected (168 pass, 1 live-skip); live PipeWire test remains opt-in.
+`173` tests collected (172 pass, 1 live-skip); live PipeWire test remains opt-in.
 
 ```bash
 .venv/bin/python -m pytest -q

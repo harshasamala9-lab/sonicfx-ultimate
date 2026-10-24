@@ -17,7 +17,7 @@ browsers, VLC, games and any desktop app through a real PipeWire DSP path.
 |---|---|---|
 | 1 | Environment audit, dependency scripts | ✅ done (`docs/stage1-environment-audit.md`) |
 | 2 | Offline DSP foundations (design plane) | ✅ done — 71 tests pass (`docs/stage2-dsp-results.md`) |
-| 3 | Real PipeWire filter-chain path | ⏳ next — needs `scripts/install-deps.sh` (sudo) |
+| 3 | Real PipeWire filter-chain path | ✅ verified — real DSP measured, 144.6 ms apply gap (`docs/stage3-results.md`); hardware wiring + soak open |
 | 4–7 | GUI, profiles, diagnostics, packaging | pending |
 
 ## Quick start (developer)
@@ -33,6 +33,20 @@ bash scripts/setup-venv.sh
 .venv/bin/python -m sonicfx.diagnostics.environment
 ```
 
+## Free 4K movie companion
+
+A separate, fully free playback stack for watching 4K movies and listening to
+music on the same laptop:
+
+```bash
+sudo scripts/install-media-4k.sh
+```
+
+It installs Intel iHD VA-API hardware decoding, mpv + Celluloid, GStreamer
+VA-API plugins and Firefox VA-API preferences. Details, verification commands
+and troubleshooting: `docs/media-4k-setup.md`. It does not change your default
+audio devices or SonicFX routing.
+
 ## Repository layout
 
 ```
@@ -42,7 +56,7 @@ src/sonicfx/
   audio/          # EngineAPI facade, device registry, meter tap (Stage 3/4)
   pipewire/       # filter-chain config generator + daemon lifecycle (Stage 3)
   dsp/            # offline design/manipulation (coefficients, IRs, meters' math) (Stage 2)
-  profiles/       # 12 profiles + custom presets (Stage 6)
+  profiles/       # built-in enhancement presets (Stage 3) + custom profiles (Stage 6)
   database/       # SQLite persistence (Stage 6)
   diagnostics/    # environment audit, logs, recovery (Stage 1/6)
 docs/             # architecture, limitations, latency, LICENSES

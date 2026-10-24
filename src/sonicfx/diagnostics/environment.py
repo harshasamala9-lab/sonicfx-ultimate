@@ -22,18 +22,21 @@ from typing import Any
 OK, WARN, MISSING, FAIL = "ok", "warn", "missing", "fail"
 _STATUS_RANK = {OK: 0, WARN: 1, MISSING: 2, FAIL: 3}
 
-#: Fully-formed .so names required inside the standard LADSPA/LV2 search dirs.
+#: Fully-formed filenames required inside the standard LADSPA/LV2 search dirs.
+#: LV2 plugins live inside ``<name>.lv2/`` bundles; the matcher handles both
+#: bare files and bundle-relative matches.
 _PLUGIN_PROBES: dict[str, list[str]] = {
-    # widening / spatialiser (swh-plugins)
+    # widening / spatialiser (swh-plugins, LADSPA)
     "swh.plugins": ["matrix_spatialiser_1422.so"],
-    # dynamics / reverb sets (calf-plugins LV2, zam-plugins LV2, swh LADSPA)
-    "calf.lv2": ["calf.so", "organ.so"],
-    "zam.lv2": ["ZaMaximX2.so", "ZamCompX2.so"],
+    # dynamics / reverb sets
+    "calf.lv2": ["calf.so", "Compressor.ttl", "Reverb.ttl", "MultiBandCompressor.ttl"],
+    "zam.ladspa": ["ZaMaximX2-ladspa.so", "ZamCompX2-ladspa.so"],
+    "zam.lv2": ["ZaMaximX2_dsp.so", "ZamCompX2_dsp.so"],
     "swh.limiter": ["fast_lookahead_limiter_1913.so"],
     # headphone crossfeed
     "bs2b.ladspa": ["bs2b.so"],
     # ambisonics helpers (optional)
-    "amb.ladspa": ["ambdecode.so", "ambenc_stereo.so"],
+    "amb.ladspa": ["ambisonic1.so", "ambisonic2.so", "ambisonic3.so"],
 }
 
 _PLUGIN_DIRS = [
@@ -158,11 +161,16 @@ def _check_plugins() -> dict[str, Check]:
             for d, files in files_by_dir.items():
                 if probe in files:
                     hits.append(f"{d}/{probe}")
+                else:
+                    hits.extend(
+                        f"{d}/{entry}" for entry in files
+                        if entry.endswith("/" + probe)
+                    )
         found_bundles.update(hits)
-        # Calf is an LV2 bundle (calf.so) — mark ok with partial hits as warn.
         if hits:
+            labels = sorted("/".join(Path(h).parts[-2:]) for h in hits)
             out[f"plugin.{key}"] = Check(
-                f"plugin.{key}", OK, f"found: {', '.join(hits[:3])}")
+                f"plugin.{key}", OK, "found: " + ", ".join(labels)[:80])
         else:
             out[f"plugin.{key}"] = Check(
                 f"plugin.{key}", MISSING,

@@ -28,8 +28,29 @@ Why this satisfies §4 of the build prompt:
   daemon keeps processing; if the daemon dies, its links die with it and
   WirePlumber reroutes streams to the fallback device. Nobody's system audio
   config is overwritten — the daemon reads its own config file.
-* Parameters are driven through node control ports (e.g. biquad `Freq/Q/Gain`)
-  — smoothed (`:s` control names) to avoid zipper noise.
+* **Live-control reality (verified during Stage 3):** PipeWire filter-chain
+  nodes do **not** export their graph controls (biquad `Freq/Q/Gain`, plugin
+  ports) as writable node parameters; only the adapter's volume/mute/channelmix
+  props are externally writable. DSP parameter changes are therefore applied by
+  **atomic config regeneration + a supervised, debounced fast daemon restart**
+  (measured gap target ≤ 400 ms; used for band edits, presets and structural
+  changes alike), while master volume/mute use the adapter props for instant
+  response. This trade-off is documented to users; nothing is simulated.
+* **Verified child-daemon recipe (live-tested on PipeWire 1.6.2):** a standalone
+  `pipewire -c <conf>` publishes its filter-chain nodes into the main session
+  registry when the config loads, in this order:
+  `libpipewire-module-protocol-native`, `libpipewire-module-client-node`,
+  `libpipewire-module-adapter`, `libpipewire-module-filter-chain`, plus
+  `context.spa-libs = { audio.convert.* = audioconvert/libspa-audioconvert,
+  support.* = support/libspa-support }`. Missing `protocol-native` ⇒
+  "can't find protocol"; missing `client-node` ⇒ node export "Protocol error";
+  missing `adapter` ⇒ "no adapter factory found". Proven live: virtual sink
+  `sonicfx_test_in` (Audio/Sink) + passive playback, 0 errors, DSP in the child.
+
+**Companion deliverable (user request):** `scripts/install-media-4k.sh`
+installs a 100 % free 4K movie/music playback stack (Intel iHD VA-API, mpv,
+Celluloid, GStreamer VA-API, Firefox VA-API prefs) for the same laptop.
+See `docs/media-4k-setup.md`. This is independent of the SonicFX audio engine.
 * `pw-dump`/`pw-cli`/`wpctl` (subprocess "control plane") implement device
   selection, linking, reconnection and health checks.
 
@@ -50,7 +71,12 @@ the audit flags it. Nothing fakes it.
 | Virtual surround (HRTF-style) | builtin `convolver` per-channel, hesuvi/KEMAR-compatible configs; user IRs supported; synthetic mode documented as an estimate (no false Atmos claims) |
 | Crossfeed / headphone | LADSPA `bs2b` (+ optional width/externalization shelf) |
 | Compressor / limiter | Calf Compressor/Limiter LV2 (or swh `fast_lookahead_limiter_1913`, Zam fallbacks) with GR estimation on the meter tap |
-| Dialogue clarity | speech EQ pattern + moderate compression presets on the same engine |
+| Dialogue clarity / boost | mid-Q peaking pair (1.6–3.2 kHz) + gentle compressor + level-match stage; presets for films |
+| Night mode | low-ratio compressor + lookahead limiter + bass trim, bounded to avoid pumping |
+| Bass punch | low-shelf (60–90 Hz) + optional Calf bass-enhancer harmonic stage, limiter-protected |
+| Concert hall | Calf Reverb LV2 (decay 1.2–2.4 s, damping, wet mix presets) |
+| Loudness match | meter tap LUFS-I → slow target gain (bounded ±6 dB, no upward compression) |
+| Presets | Movies, Songs, Night, Headphones, Podcast/Voice, Gaming, Flat + user presets |
 | Noise reduction (mic) | optional, opt-in build of rnnoise-LADSPA (documented, not bundled) |
 | Loudness | meter tap: K-weighted LUFS-I (Python, 100 ms update on tap only) + optional slow target-gain correction |
 | Meters / diagnostics | bounded low-rate monitor capture (not the audio path); GR estimated, clip detection from tap peaks |
@@ -83,13 +109,26 @@ Acceptance: pytest set covering (a) biquad design math vs scipy reference
 math, (c) LUFS/K-weighting meter math vs textbook values, (d) IR synthesis
 sanity (decay, energy). All pure numpy/scipy; run in CI-able minutes.
 
-**Stage 3 — real PipeWire path (sudo plugin packages needed)**
-Build `sonicfx` chain daemon from JSON: create virtual sink; verify with real
-audio that a GUI-driven param change measurably changes the output spectrum
-(pink-noise probe recorded through the chain, offline FFT comparison);
-bypass = unprocessed path (same probe, ~zero insert). Verify exit-time restore +
-daemon-kill rerouting to hardware sink. Bounds-check: no memory alloc in audio
-thread when changing `Freq` (pw-top CPU flat for 10 min loop).
+**Stage 3 — real PipeWire path (sudo plugin packages installed ✅)**
+Build the `sonicfx` chain daemon from JSON using the verified recipe in §1;
+virtual sink + passive playback wired to the chosen hardware sink (never the
+default sink unless the user opts in). Acceptance on this machine:
+
+* child daemon publishes nodes into the session registry with 0 errors
+  (proven live on 2026-10-24);
+* real-audio probe: pink noise → virtual sink, monitor captured, offline FFT
+  shows the configured cuts/boosts within ±0.5 dB of the design curve;
+* applying a preset with a different curve measurably changes the spectrum;
+  measured restart gap ≤ 400 ms;
+* bypass stops the chain and returns the unprocessed path; daemon kill ⇒
+  streams rerouted to the hardware sink, no stuck streams;
+* exit-time restore of the recorded pre-state;
+* 10-minute soak: `pw-top` CPU flat, zero xruns.
+
+**Stage 3 status (2026-10-24):** publication, real-audio FFT verification and
+supervised restart **passed** — +11.78 dB measured for a +12 dB / 1 kHz band,
+restart gap 144.6 ms; see `docs/stage3-results.md`. Explicit hardware wiring,
+bypass/daemon-kill recovery and the 10-minute soak remain open.
 
 **Stage 4 — GUI (PySide6) live with the engine**
 Every visible knob maps to the same control port used in Stage 3's recorded test;

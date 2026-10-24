@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# SonicFX runtime artefacts
+logs/
+*.log.jsonl
+
+# Local audit dumps (reproducible via scripts)
+/tmp/opencode/

@@ -48,3 +48,14 @@ otherwise. (Requirement: no official-Dolby-equivalence claims, never fake featur
    never silently discard channels (LFE routing is explicit on multichannel).
 8. **"Spatial effect strength" extremes** are supported by the design, but the
    screen states explicit safe-defaults guidance to avoid mono-collapse.
+9. **DSP edits restart the chain.** PipeWire filter-chain graph controls are not
+   externally writable, so parameter changes are applied by atomic config
+   regeneration and a supervised restart (measured 145 ms; 255 ms including
+   re-wiring). Edits are debounced 300 ms; a brief gap can be audible while
+   fine-tuning. No live control is simulated.
+10. **Default routing is per desktop session and opt-in.** The GUI switch is on
+    for this profile, but the previous default is always recorded first and
+    restored on Stop, exit, failure or the next launch after a crash. If that
+    device has disappeared, the selected output device is used. Force-killing
+    the GUI leaves the already-running chain (and default) in place until
+    recovery; the app never overwrites system PipeWire configuration.

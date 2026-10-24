@@ -127,14 +127,22 @@ default sink unless the user opts in). Acceptance on this machine:
 
 **Stage 3 status (2026-10-24):** publication, real-audio FFT verification and
 supervised restart **passed** — +11.78 dB measured for a +12 dB / 1 kHz band,
-restart gap 144.6 ms; see `docs/stage3-results.md`. Explicit hardware wiring,
-bypass/daemon-kill recovery and the 10-minute soak remain open.
+restart gap 144.6 ms; see `docs/stage3-results.md`. Explicit hardware wiring was
+completed and live-verified in Stage 4; bypass/daemon-kill recovery and the
+10-minute soak remain open.
 
 **Stage 4 — GUI (PySide6) live with the engine**
 Every visible knob maps to the same control port used in Stage 3's recorded test;
 pytest-qt injects synthetic state changes and asserts "GUI → param" wiring.
 Dashboard shows real values: live peak meter from tap, engine latency from
 quantum math, health from reconciler.
+
+**Stage 4 status (2026-10-24):** GUI, presets, band editing, output selection,
+explicit `pw-link` routing, default-sink opt-in with crash-safe restore,
+login autostart, worker-thread engine calls and 300 ms debounce **working live**
+(see `docs/stage4-gui-routing.md`). Live peak/LUFS meter, quantum-based latency
+readout, session reconciler and the GUI-driven daemon-kill/soak checks remain
+open before the full Stage 4 gate above is claimed.
 
 **Stage 5 — cinema/spatial/headphone/dialogue depth**
 Calf reverb/hesuvi envelopes etc. as in §2; each profile quantised + documented.

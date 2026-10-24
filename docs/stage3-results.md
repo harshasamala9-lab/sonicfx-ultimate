@@ -58,10 +58,19 @@ pw-play ──▶ sonicfx virtual sink ──▶ filter.graph DSP ──▶ null
 Outputs `result.json` plus both WAV captures under
 `/tmp/opencode/sonicfx-stage3-probe/`. Exit code 0 = accepted.
 
-## Still open in Stage 3 (tracked in the plan)
+## Completed in Stage 4
 
 * `pipewire/wiring.py` — production explicit routing to the user-selected
-  hardware sink, self-node exclusion (no loops), and restore on exit.
-* Daemon-kill/bypass behaviour test: streams return to the hardware sink with
-  no stuck streams.
+  hardware sink, self-node exclusion (no loops), and link verification. Live
+  test: FL/FR links created to a null sink, re-created after apply, measured
+  255 ms including re-wiring (`docs/stage4-gui-routing.md`).
+* `pipewire/routing.py` + GUI — opt-in default-sink switch with atomic state,
+  crash recovery and restore on stop/exit. Verified live with Chromium audio
+  moving to `sonicfx_sink` and back through `sonicfx_out` to the JBL sink.
+* GUI stop path and offscreen tests; real daemon-kill/soak remain open.
+
+## Still open in Stage 3
+
+* Daemon-kill/bypass behaviour test at the session level: streams return to the
+  hardware sink with no stuck streams.
 * 10-minute soak with `pw-top`: flat CPU, zero xruns.

@@ -433,3 +433,28 @@ def test_auto_mode_follows_output_metadata(qtbot, controller, monkeypatch) -> No
 
     assert ctrl.output == "alsa_output.headphones"
     assert ctrl.spatial_effective_mode.value == "binaural"
+
+
+def test_speaker_mode_keeps_sofa_available_for_later_switch(
+    qtbot, controller, monkeypatch, tmp_path
+) -> None:
+    ctrl, engine, _router = controller
+    ctrl.select_preset("cinema_spatial")
+    sofa = tmp_path / "custom.sofa"
+    sofa.write_bytes(b"SOFA")
+    monkeypatch.setattr(controller_module, "find_sofa_file", lambda: sofa)
+
+    with qtbot.waitSignal(ctrl.spatial_changed, timeout=2_000):
+        ctrl.set_spatial_mode("speaker")
+    assert ctrl.spatial_available is True
+
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+
+    # Building a speaker graph must not erase the HRTF discovery state; the
+    # window would otherwise disable the binaural option after one speaker run.
+    assert ctrl.spatial_available is True
+    assert ctrl.spatial_state().available is True
+    spec = engine.start_calls[-1][0]
+    assert spec.spatial is not None
+    assert spec.spatial.mode.value == "speaker"

@@ -852,14 +852,20 @@ class Controller(QObject):
         spatial = None
         if get_preset(self._preset_key).spatial:
             mode = self.spatial_effective_mode
-            sofa = find_sofa_file() if mode is SpatialMode.BINAURAL else None
-            if mode is SpatialMode.BINAURAL and sofa is None:
-                raise RuntimeError(
-                    "Cinema Spatial binaural mode needs a SOFA HRTF file. "
-                    "Install libmysofa1 or place a .sofa file in "
-                    "~/.local/share/sonicfx/hrtf/."
-                )
-            self._sofa_path = sofa
+            if mode is SpatialMode.BINAURAL:
+                sofa = find_sofa_file()
+                if sofa is None:
+                    raise RuntimeError(
+                        "Cinema Spatial binaural mode needs a SOFA HRTF file. "
+                        "Install libmysofa1 or place a .sofa file in "
+                        "~/.local/share/sonicfx/hrtf/."
+                    )
+                self._sofa_path = sofa
+            else:
+                # Speaker mode does not need an HRTF.  Do not clear the
+                # discovered path: the user may switch to binaural later, and
+                # the UI must keep that option enabled.
+                sofa = None
             spatial = SpatialSpec(
                 mode=mode,
                 room=RoomSize(self._spatial_room),

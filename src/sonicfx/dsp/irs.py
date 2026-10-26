@@ -10,6 +10,7 @@ Everything here runs at design time; the audio path consumes the finished IR.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 
@@ -98,6 +99,123 @@ def early_reflection_taps(fs: float, size_norm: float = 0.5, seed: int = 7
     gains = 10.0 ** ((-4.0 - 2.2 * np.arange(n)) / 20.0) * rng.uniform(0.8, 1.2, n)
     return [(float(d), float(min(g, 1.0)))
             for d, g in zip(delays, gains, strict=True)]
+
+
+def stereo_room_ir(
+    fs: float,
+    rt60_s: float,
+    size_norm: float = 0.5,
+    damping_norm: float = 0.4,
+    predelay_ms: float = 16.0,
+    wet_gain: float = 0.26,
+    spread_norm: float = 0.6,
+    seed: int = 17,
+) -> np.ndarray:
+    """Stereo room response with an explicit direct path.
+
+    The first sample of each channel is the direct sound (gain 1), so a
+    convolver can replace the dry path without a parallel latency-sensitive
+    mix.  Two seeded tails are split into a common mid and a side component;
+    ``spread_norm`` scales only the side, preserving the centre image while
+    adding width.  Asymmetric early-reflection taps supply lateral cues.
+    Returns ``(samples, 2)`` float64, peak-normalised to at most 1.0.
+    """
+    if fs <= 0:
+        raise ValueError("fs must be positive")
+    if not (0.0 <= wet_gain <= 1.0):
+        raise ValueError("wet_gain must be in [0,1]")
+    if not (0.0 <= spread_norm <= 1.0):
+        raise ValueError("spread_norm must be in [0,1]")
+    # Generate two decorrelated tails, then keep a common mid component and
+    # scale only the side component.  A fully independent L/R tail is too
+    # destructive to the direct image (a mono source would arrive from the
+    # whole room); this keeps the room wide without collapsing the centre.
+    wet_l = reverb_ir(
+        fs,
+        rt60_s,
+        size_norm=size_norm,
+        damping_norm=damping_norm,
+        predelay_ms=predelay_ms,
+        spread_norm=spread_norm,
+        seed=seed,
+    )
+    wet_r = reverb_ir(
+        fs,
+        rt60_s,
+        size_norm=size_norm,
+        damping_norm=damping_norm,
+        predelay_ms=predelay_ms,
+        spread_norm=spread_norm,
+        seed=seed + 1,
+    )
+    wet_mid = 0.5 * (wet_l + wet_r)
+    wet_side = 0.5 * (wet_l - wet_r)
+    wet_pair = (
+        wet_mid + spread_norm * wet_side,
+        wet_mid - spread_norm * wet_side,
+    )
+    # Explicit lateral early reflections make the synthetic room read as a
+    # cinema rather than a generic reverb tail.  Times/gains differ slightly
+    # between ears (asymmetric room), which also widens the diffuse field.
+    early_taps = (
+        (
+            (7.0, 0.22), (11.0, -0.16), (16.0, 0.15),
+            (23.0, -0.11), (31.0, 0.09), (41.0, 0.06),
+        ),
+        (
+            (8.0, 0.20), (12.0, -0.15), (18.0, 0.14),
+            (26.0, -0.10), (35.0, 0.08), (46.0, 0.055),
+        ),
+    )
+    channels: list[np.ndarray] = []
+    for offset, wet in enumerate(wet_pair):
+        ir = np.zeros(wet.size, dtype=np.float64)
+        ir[0] = 1.0
+        ir += wet * wet_gain
+        for delay_ms, gain in early_taps[offset]:
+            index = int(delay_ms * 1e-3 * fs)
+            if 0 < index < ir.size:
+                ir[index] += gain
+        peak = float(np.max(np.abs(ir)))
+        if peak > 1.0:
+            ir /= peak
+        channels.append(ir)
+    return np.stack(channels, axis=1)
+
+
+def write_room_ir(
+    path: Path | str,
+    fs: int,
+    *,
+    rt60_s: float,
+    size_norm: float = 0.5,
+    damping_norm: float = 0.4,
+    predelay_ms: float = 16.0,
+    wet_gain: float = 0.26,
+    spread_norm: float = 0.6,
+    seed: int = 17,
+) -> Path:
+    """Write a stereo room response as 16-bit PCM WAV for PipeWire's convolver."""
+    from scipy.io import wavfile
+
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    ir = stereo_room_ir(
+        float(fs),
+        rt60_s,
+        size_norm=size_norm,
+        damping_norm=damping_norm,
+        predelay_ms=predelay_ms,
+        wet_gain=wet_gain,
+        spread_norm=spread_norm,
+        seed=seed,
+    )
+    wavfile.write(
+        destination,
+        int(fs),
+        np.asarray(np.clip(ir, -1.0, 1.0) * 32767.0, dtype="<i2"),
+    )
+    return destination
 
 
 def estimate_rt60(ir: np.ndarray, fs: float) -> float:

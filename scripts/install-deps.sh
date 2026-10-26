@@ -11,7 +11,10 @@ sudo apt-get update
 
 echo "== Installing runtime DSP plugin packages =="
 # swh-plugins : LADSPA - Matrix Spatialiser (stereo widening), lookahead limiter,
-#               Dyson compressor, FADSR… (GPL-2, Steve Harris)
+#               Dyson compressor, FADSR… (GPL-2, Steve Harris).  The
+#               fastLookaheadLimiter protects Cinema Spatial headroom.
+# libmysofa1  : MIT KEMAR SOFA HRTF dataset + libmysofa runtime used by
+#               PipeWire's native sofa spatializer (BSD-3-Clause/MIT data).
 # calf-plugins: LV2/LADSPA - Compressor, Limiter, Reverb, Multiband, Gate, Deesser
 #               (LGPL-2.1+, Calf Studio Gear)
 # zam-plugins : LV2 - ZaMaximX2 look-ahead limiter, ZamCompX2 dial-up compressor,
@@ -20,6 +23,7 @@ echo "== Installing runtime DSP plugin packages =="
 # amb-plugins : LADSPA - ambisonics encoder/decoder helpers (GPL-2+)
 # swh-plugins sets the widening matrix spatialiser used by the Cinema module.
 sudo apt-get install -y \
+    libmysofa1 \
     swh-plugins \
     calf-plugins \
     zam-plugins \

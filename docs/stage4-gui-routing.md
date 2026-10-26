@@ -121,7 +121,9 @@ New suites:
   be heard while fine-tuning. This is a PipeWire filter-chain limitation, not a
   simulated control.
 * Only equalisation bands exposed by the chosen preset are editable; adding
-  arbitrary bands and the dynamics/spatial blocks are later stages.
+  arbitrary bands and the dynamics blocks are later stages. The Linux Cinema
+  Spatial virtualiser is now available as a preset-level stage with mode/room/
+  immersion controls (see [`cinema-spatial.md`](cinema-spatial.md)).
 * There is still no LUFS/true-peak loudness meter or reconciliation loop yet;
   the Live Peak meter shows sample peaks of the output-device monitor only.
 * If the GUI is force-killed, the chain keeps running (by design) and the

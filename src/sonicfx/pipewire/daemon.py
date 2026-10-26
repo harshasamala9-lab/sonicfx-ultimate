@@ -23,10 +23,11 @@ import os
 import signal
 import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from sonicfx.pipewire.chain import ChainSpec, render_chain_conf
+from sonicfx.pipewire.spatial import ensure_room_ir
 
 _DEFAULT_STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
 
@@ -73,11 +74,12 @@ class ChainDaemon:
         if self.status().running:
             self.stop()
         self._ensure_dirs()
+        prepared = self._prepare_spec(spec)
         generation = self._latest_generation() + 1
-        conf_path = self._write_conf(spec, generation)
-        self._spawn(spec, conf_path)
+        conf_path = self._write_conf(prepared, generation)
+        self._spawn(prepared, conf_path)
         try:
-            self._wait_ready(spec.sink_name, generation)
+            self._wait_ready(prepared.sink_name, generation)
         except DaemonError:
             self.stop()
             raise
@@ -138,6 +140,25 @@ class ChainDaemon:
     def _ensure_dirs(self) -> None:
         self.chain_dir.mkdir(parents=True, exist_ok=True)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def _prepare_spec(self, spec: ChainSpec) -> ChainSpec:
+        """Fill in generated assets (currently the Cinema Spatial room IR).
+
+        ``_write_conf`` keeps its historical return type and stays testable;
+        the prepared spec is what gets rendered and spawned.  A missing SOFA
+        file is caught earlier by ``ChainSpec`` validation.
+        """
+        spatial = spec.spatial
+        if spatial is None or spatial.room_ir:
+            return spec
+        try:
+            ir_path = ensure_room_ir(self.state_dir, spatial, spec.sample_rate)
+        except (OSError, ValueError) as exc:
+            raise DaemonError(
+                "could not prepare the Cinema Spatial room response: " + str(exc)
+            ) from exc
+        prepared = replace(spatial, room_ir=str(ir_path))
+        return replace(spec, spatial=prepared)
 
     def _write_conf(self, spec: ChainSpec, generation: int) -> Path:
         self.chain_dir.mkdir(parents=True, exist_ok=True)

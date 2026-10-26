@@ -33,12 +33,16 @@ class WiringError(RuntimeError):
 
 @dataclass(frozen=True)
 class SinkInfo:
-    """One selectable hardware/virtual output."""
+    """One selectable hardware/virtual output with Auto-mode metadata."""
 
     name: str
     serial: int
     description: str
     is_default: bool = False
+    icon_name: str = ""
+    form_factor: str = ""
+    api: str = ""
+    channels: int = 2
 
 
 @dataclass(frozen=True)
@@ -84,6 +88,14 @@ def parse_link_list(text: str) -> list[tuple[str, str]]:
     return pairs
 
 
+def _int_prop(value: object, default: int) -> int:
+    try:
+        number = int(float(str(value)))
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
 def sink_infos_from_dump(
     objects: list[dict], default_name: str | None = None
 ) -> list[SinkInfo]:
@@ -91,7 +103,31 @@ def sink_infos_from_dump(
 
     SonicFX's own nodes (``sonicfx*``) are excluded so the chain can never be
     routed into itself. The default sink is listed first.
+
+    PipeWire puts ``device.form-factor`` and ``device.icon-name`` on the
+    separate ``Audio/Device`` object, not on the sink node.  Auto mode needs
+    that metadata, so the sink's ``device.id`` is resolved against the device
+    objects before falling back to node properties.
     """
+    devices: dict[int, dict] = {}
+    for obj in objects:
+        if obj.get("type") != "PipeWire:Interface:Device":
+            continue
+        raw_id = obj.get("id")
+        try:
+            device_id = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        devices[device_id] = (obj.get("info") or {}).get("props") or {}
+
+    def prop(*sources: dict, keys: tuple[str, ...]) -> object:
+        for source in sources:
+            for key in keys:
+                value = source.get(key)
+                if value not in (None, ""):
+                    return value
+        return ""
+
     sinks: list[SinkInfo] = []
     for obj in objects:
         if obj.get("type") != "PipeWire:Interface:Node":
@@ -102,8 +138,25 @@ def sink_infos_from_dump(
         name = str(props.get("node.name") or "")
         if not name or name.startswith("sonicfx"):
             continue
+        device_props: dict = {}
+        raw_device = props.get("device.id")
+        if raw_device is not None:
+            try:
+                device_props = devices.get(int(float(str(raw_device))), {})
+            except (TypeError, ValueError):
+                device_props = {}
         description = str(
-            props.get("node.description") or props.get("node.nick") or name
+            prop(
+                props,
+                device_props,
+                keys=(
+                    "node.description",
+                    "node.nick",
+                    "device.description",
+                    "device.nick",
+                ),
+            )
+            or name
         )
         try:
             serial = int(props.get("object.serial") or obj.get("id") or 0)
@@ -115,6 +168,24 @@ def sink_infos_from_dump(
                 serial=serial,
                 description=description,
                 is_default=name == default_name,
+                icon_name=str(
+                    prop(
+                        props,
+                        device_props,
+                        keys=("device.icon_name", "device.icon-name"),
+                    )
+                ),
+                form_factor=str(
+                    prop(
+                        props,
+                        device_props,
+                        keys=("device.form_factor", "device.form-factor"),
+                    )
+                ),
+                api=str(prop(props, device_props, keys=("device.api",))),
+                channels=_int_prop(
+                    prop(props, keys=("audio.channels", "device.channels")), 2
+                ),
             )
         )
     sinks.sort(key=lambda sink: (not sink.is_default, sink.description.casefold()))

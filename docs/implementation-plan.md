@@ -68,7 +68,7 @@ the audit flags it. Nothing fakes it.
 | Stereo widening | LADSPA `matrix_spatialiser_1422` (swh) with mono-sum safety option (builtin `mixer` + polarity compensation) |
 | Mid-side | builtin ops: mono mix (`M=0.5(L+R)`), side (`S=0.5(L−R)`), re-encode (gain ops) |
 | Reverb / ambience | Calf Reverb LV2 (live size/decay/damping/wet) or convolver with program-generated IR |
-| Virtual surround (HRTF-style) | builtin `convolver` per-channel, hesuvi/KEMAR-compatible configs; user IRs supported; synthetic mode documented as an estimate (no false Atmos claims) |
+| Virtual surround (HRTF-style) | native `spatializer` SOFA nodes (MIT KEMAR via libmysofa), 11 virtual 7.1.4-style feeds, band-limited centre extraction, bass management, all-pass decorrelation, stereo `convolver` room IR; speaker mode uses transaural ambience/CTC. Virtualisation, not object audio (no false Atmos claims) |
 | Crossfeed / headphone | LADSPA `bs2b` (+ optional width/externalization shelf) |
 | Compressor / limiter | Calf Compressor/Limiter LV2 (or swh `fast_lookahead_limiter_1913`, Zam fallbacks) with GR estimation on the meter tap |
 | Dialogue clarity / boost | mid-Q peaking pair (1.6–3.2 kHz) + gentle compressor + level-match stage; presets for films |

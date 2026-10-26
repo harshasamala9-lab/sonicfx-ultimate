@@ -11,7 +11,8 @@ third-party binary is bundled in this repository.
 |---|---|---|---|
 | PipeWire 1.6.2 | MIT/LGPL-2.1 | real-time graph + hosting of DSP plugins in audio thread | `pipewire`, `pipewire-pulse`, `wireplumber` |
 | libpipewire-module-filter-chain | MIT (part of PipeWire) | the C DSP chains we generate configs/host | `pipewire` |
-| SWH plugins (Steve Harris LADSPA) | GPL-2.0+ | stereo widening (`matrixSpatialiser`), look-ahead limiter, Dyson compressor | `swh-plugins` |
+| SWH plugins (Steve Harris LADSPA) | GPL-2.0+ | stereo widening (`matrixSpatialiser`), look-ahead limiter for Cinema Spatial, Dyson compressor | `swh-plugins` |
+| libmysofa / MIT KEMAR SOFA | BSD-3-Clause (library) + MIT KEMAR dataset terms | native SOFA HRTF reader and measured binaural dataset | `libmysofa1` |
 | Calf Studio Gear (LV2/LADSPA) | LGPL-2.1+ | compressor, look-ahead limiter, reverb, multiband, gate, de-esser | `calf-plugins` |
 | Zam-plugins (LV2) | GPL-3.0+ | ZaMaximX2/comp limiter, gate (fallbacks) | `zam-plugins` |
 | Bauer bs2b LADSPA | GPL-2.0+ & MIT | headphone crossfeed algorithm | `bs2b-ladspa` |

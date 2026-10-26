@@ -17,7 +17,7 @@ import math
 import os
 import threading
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from PySide6.QtCore import (
     QMetaObject,
@@ -37,6 +37,14 @@ from sonicfx.logging_setup import get_logger
 from sonicfx.pipewire import tap as tap_module
 from sonicfx.pipewire.chain import ChainSpec
 from sonicfx.pipewire.routing import DefaultSinkRouter, RoutingError
+from sonicfx.pipewire.spatial import (
+    RoomSize,
+    SpatialMode,
+    SpatialSpec,
+    find_sofa_file,
+    infer_spatial_mode,
+    limiter_available,
+)
 from sonicfx.pipewire.tap import LevelTap, TapError
 from sonicfx.pipewire.wiring import SinkInfo, default_sink_name, list_sinks
 from sonicfx.profiles.presets import DEFAULT_PRESET_KEY, get_preset, preset_keys
@@ -61,6 +69,23 @@ def _amp_to_db(amplitude: float) -> float:
 
 def _db_to_amp(db: float) -> float:
     return 0.0 if db <= _PEAK_FLOOR_DB else 10.0 ** (db / 20.0)
+
+
+@dataclass(frozen=True)
+class SpatialUiState:
+    """Everything the window needs to present Cinema Spatial honestly."""
+
+    enabled: bool
+    mode: str
+    effective_mode: str
+    room: str
+    amount: int
+    available: bool
+    limiter: bool
+
+    @property
+    def effective_label(self) -> str:
+        return SpatialMode(self.effective_mode).label
 
 
 class EngineWorker(QObject):
@@ -223,6 +248,7 @@ class Controller(QObject):
     route_changed = Signal(bool)
     use_default_changed = Signal(bool)
     login_autostart_changed = Signal(bool)
+    spatial_changed = Signal(object)
 
     def __init__(
         self,
@@ -246,6 +272,18 @@ class Controller(QObject):
         self._use_default = self._read_bool("use_as_default", True)
         self._auto_start = self._read_bool("auto_start_engine", True)
         self._login_autostart = autostart.is_enabled()
+        mode = self._read_str("spatial_mode", SpatialMode.AUTO.value)
+        self._spatial_mode = (
+            mode if mode in {item.value for item in SpatialMode} else SpatialMode.AUTO.value
+        )
+        room = self._read_str("spatial_room", RoomSize.MEDIUM.value)
+        self._spatial_room = (
+            room if room in {item.value for item in RoomSize} else RoomSize.MEDIUM.value
+        )
+        self._spatial_amount = max(0, min(100, self._read_int("spatial_amount", 75)))
+        self._sinks: list[SinkInfo] = []
+        self._sofa_path = find_sofa_file()
+        self._limiter_installed = limiter_available()
 
         self._running = False
         self._busy = False
@@ -323,6 +361,53 @@ class Controller(QObject):
         """Held peak levels in dBFS (L, R); ``-60`` means digital silence."""
         return self._peak_db
 
+    # -- Cinema Spatial (Linux only; Windows controller omits this surface) --
+    @property
+    def supports_spatial(self) -> bool:
+        return True
+
+    @property
+    def spatial_mode(self) -> str:
+        return self._spatial_mode
+
+    @property
+    def spatial_room(self) -> str:
+        return self._spatial_room
+
+    @property
+    def spatial_amount(self) -> int:
+        return self._spatial_amount
+
+    @property
+    def spatial_available(self) -> bool:
+        return self._sofa_path is not None
+
+    @property
+    def spatial_effective_mode(self) -> SpatialMode:
+        if self._spatial_mode != SpatialMode.AUTO.value:
+            return SpatialMode(self._spatial_mode)
+        sink = next((item for item in self._sinks if item.name == self._output), None)
+        if sink is None:
+            return SpatialMode.SPEAKER
+        return infer_spatial_mode(
+            icon_name=sink.icon_name,
+            form_factor=sink.form_factor,
+            node_name=sink.name,
+            channels=sink.channels,
+        )
+
+    def spatial_state(self) -> SpatialUiState:
+        preset = get_preset(self._preset_key)
+        return SpatialUiState(
+            enabled=preset.spatial,
+            mode=self._spatial_mode,
+            effective_mode=self.spatial_effective_mode.value,
+            room=self._spatial_room,
+            amount=self._spatial_amount,
+            available=self.spatial_available,
+            limiter=self._limiter_installed,
+        )
+
     def login_autostart_enabled(self) -> bool:
         return self._login_autostart
 
@@ -344,6 +429,7 @@ class Controller(QObject):
         self.preset_changed.emit(self._preset_key)
         self.bands_changed.emit(self._bands)
         self.custom_changed.emit(self.is_custom())
+        self.spatial_changed.emit(self.spatial_state())
         self.use_default_changed.emit(self._use_default)
         self.login_autostart_changed.emit(self._login_autostart)
         self.route_changed.emit(self._route_active)
@@ -437,6 +523,7 @@ class Controller(QObject):
         self.preset_changed.emit(key)
         self.bands_changed.emit(self._bands)
         self.custom_changed.emit(False)
+        self.spatial_changed.emit(self.spatial_state())
         if self._running:
             self._schedule_apply()
         log.info("preset selected: %s", key)
@@ -464,10 +551,59 @@ class Controller(QObject):
         if self._running:
             self._schedule_apply()
 
+    def set_spatial_mode(self, mode: str) -> None:
+        """Override Auto/Headphones/Speakers for the Cinema Spatial preset."""
+        try:
+            value = SpatialMode(mode)
+        except ValueError:
+            return
+        if value is SpatialMode.BINAURAL and find_sofa_file() is None:
+            self._show_error(
+                "Binaural Cinema Spatial needs a SOFA HRTF file. Install "
+                "libmysofa1 or place a .sofa file in "
+                "~/.local/share/sonicfx/hrtf/."
+            )
+            self.spatial_changed.emit(self.spatial_state())
+            return
+        if value.value == self._spatial_mode:
+            return
+        self._spatial_mode = value.value
+        self._sofa_path = find_sofa_file()
+        self._settings.setValue("spatial_mode", self._spatial_mode)
+        self.spatial_changed.emit(self.spatial_state())
+        if self._running:
+            self._schedule_apply()
+        log.info("spatial mode: %s", self._spatial_mode)
+
+    def set_spatial_room(self, room: str) -> None:
+        try:
+            value = RoomSize(room)
+        except ValueError:
+            return
+        if value.value == self._spatial_room:
+            return
+        self._spatial_room = value.value
+        self._settings.setValue("spatial_room", self._spatial_room)
+        self.spatial_changed.emit(self.spatial_state())
+        if self._running:
+            self._schedule_apply()
+
+    def set_spatial_amount(self, amount: int) -> None:
+        value = max(0, min(100, int(amount)))
+        if value == self._spatial_amount:
+            return
+        self._spatial_amount = value
+        self._settings.setValue("spatial_amount", value)
+        self.spatial_changed.emit(self.spatial_state())
+        if self._running:
+            self._schedule_apply()
+
     def set_output(self, name: str) -> None:
         if not name or name == self._output:
             return
-        names = {sink.name for sink in list_sinks()}
+        sinks = list_sinks()
+        self._sinks = sinks
+        names = {sink.name for sink in sinks}
         if name not in names:
             self._show_error(f"Output device {name!r} is no longer available.")
             self.refresh_sinks()
@@ -475,12 +611,16 @@ class Controller(QObject):
         self._output = name
         self._settings.setValue("output_device", name)
         self.output_changed.emit(name)
+        # In Auto mode the output class decides binaural vs speaker; tell the
+        # window before the debounced restart so the hint is never stale.
+        self.spatial_changed.emit(self.spatial_state())
         if self._running:
             self._meter_worker.refresh()  # tap the new device's monitor
             self._schedule_apply()
 
     def refresh_sinks(self) -> None:
         sinks: list[SinkInfo] = list_sinks()
+        self._sinks = sinks
         names = [sink.name for sink in sinks]
         if self._output not in names:
             chosen = next((sink.name for sink in sinks if sink.is_default), "")
@@ -495,6 +635,7 @@ class Controller(QObject):
                     self._schedule_apply()
         self.sinks_changed.emit(sinks)
         self.output_changed.emit(self._output)
+        self.spatial_changed.emit(self.spatial_state())
 
     def set_use_default(self, enabled: bool) -> None:
         enabled = bool(enabled)
@@ -708,10 +849,29 @@ class Controller(QObject):
 
     # -- helpers -----------------------------------------------------------
     def _spec(self) -> ChainSpec:
+        spatial = None
+        if get_preset(self._preset_key).spatial:
+            mode = self.spatial_effective_mode
+            sofa = find_sofa_file() if mode is SpatialMode.BINAURAL else None
+            if mode is SpatialMode.BINAURAL and sofa is None:
+                raise RuntimeError(
+                    "Cinema Spatial binaural mode needs a SOFA HRTF file. "
+                    "Install libmysofa1 or place a .sofa file in "
+                    "~/.local/share/sonicfx/hrtf/."
+                )
+            self._sofa_path = sofa
+            spatial = SpatialSpec(
+                mode=mode,
+                room=RoomSize(self._spatial_room),
+                amount=self._spatial_amount / 100.0,
+                sofa_path=str(sofa) if sofa is not None else None,
+                limiter=self._limiter_installed,
+            )
         return ChainSpec(
             bands=self._bands,
             sink_description="SonicFX Ultimate",
             autoconnect=False,
+            spatial=spatial,
         )
 
     def _set_busy(self, busy: bool) -> None:
@@ -764,3 +924,10 @@ class Controller(QObject):
     def _read_str(self, key: str, default: str) -> str:
         value = self._settings.value(key, default)
         return str(value) if value is not None else default
+
+    def _read_int(self, key: str, default: int) -> int:
+        value = self._settings.value(key, default)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default

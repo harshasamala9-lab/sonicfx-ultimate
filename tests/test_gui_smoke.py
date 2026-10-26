@@ -198,3 +198,112 @@ def test_peak_meter_renders_live_levels(qtbot, monkeypatch, tmp_path) -> None:
 
     assert window._meter._levels == pytest.approx((1.0, 0.4))
     assert window._stat_peak.value.text() == "+3.5 dB"
+
+
+from sonicfx.ui.controller import SpatialUiState  # noqa: E402
+
+
+class SpatialFakeController(FakeController):
+    """Fake controller exposing the Linux Cinema Spatial surface."""
+
+    spatial_changed = Signal(object)
+    supports_spatial = True
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._preset_key = "cinema_spatial"
+        self._spatial_mode = "auto"
+        self._spatial_room = "medium"
+        self._spatial_amount = 75
+        self.spatial_calls: list[tuple[str, object]] = []
+
+    def _state(self) -> SpatialUiState:
+        effective = (
+            "binaural" if self._spatial_mode == "binaural" else "speaker"
+        )
+        return SpatialUiState(
+            enabled=get_preset(self._preset_key).spatial,
+            mode=self._spatial_mode,
+            effective_mode=effective,
+            room=self._spatial_room,
+            amount=self._spatial_amount,
+            available=True,
+            limiter=True,
+        )
+
+    def bootstrap(self) -> None:
+        super().bootstrap()
+        self.spatial_changed.emit(self._state())
+
+    def select_preset(self, key: str) -> None:
+        self._preset_key = key
+        super().select_preset(key)
+        self.spatial_changed.emit(self._state())
+
+    def set_spatial_mode(self, mode: str) -> None:
+        self._spatial_mode = mode
+        self.spatial_calls.append(("mode", mode))
+        self.spatial_changed.emit(self._state())
+
+    def set_spatial_room(self, room: str) -> None:
+        self._spatial_room = room
+        self.spatial_calls.append(("room", room))
+        self.spatial_changed.emit(self._state())
+
+    def set_spatial_amount(self, amount: int) -> None:
+        self._spatial_amount = int(amount)
+        self.spatial_calls.append(("amount", int(amount)))
+        self.spatial_changed.emit(self._state())
+
+
+def _spatial_window(qtbot, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    app = QApplication.instance() or QApplication([])
+    apply_theme(app)
+    controller = SpatialFakeController()
+    window = MainWindow(controller)
+    qtbot.addWidget(window)
+    window.show()
+    app.processEvents()
+    return controller, window
+
+
+def test_spatial_card_visible_for_cinema_spatial(qtbot, monkeypatch, tmp_path) -> None:
+    controller, window = _spatial_window(qtbot, monkeypatch, tmp_path)
+
+    assert window._spatial_card.isVisible() is True
+    assert window._spatial_effective.text() == "Stereo speakers · transaural"
+    assert window._spatial_mode_combo.currentData() == "auto"
+    assert window._spatial_room_combo.currentData() == "medium"
+    assert window._spatial_amount.value() == 75
+    assert window._spatial_amount_value.text() == "75%"
+    assert "Stereo speakers" in window._spatial_hint.text()
+    assert controller.spatial_calls == []
+
+
+def test_spatial_controls_call_controller(qtbot, monkeypatch, tmp_path) -> None:
+    controller, window = _spatial_window(qtbot, monkeypatch, tmp_path)
+
+    index = window._spatial_mode_combo.findData("binaural")
+    window._spatial_mode_combo.setCurrentIndex(index)
+    index = window._spatial_room_combo.findData("large")
+    window._spatial_room_combo.setCurrentIndex(index)
+    window._spatial_amount.setValue(40)
+    QApplication.processEvents()
+
+    assert ("mode", "binaural") in controller.spatial_calls
+    assert ("room", "large") in controller.spatial_calls
+    assert ("amount", 40) in controller.spatial_calls
+    assert window._spatial_amount_value.text() == "40%"
+    assert window._spatial_effective.text() == "Headphones · binaural"
+    assert "Headphones" in window._spatial_hint.text()
+
+
+def test_spatial_card_hides_for_tonal_preset(qtbot, monkeypatch, tmp_path) -> None:
+    controller, window = _spatial_window(qtbot, monkeypatch, tmp_path)
+    assert window._spatial_card.isVisible() is True
+
+    controller.select_preset("movies")
+    QApplication.processEvents()
+
+    assert window._spatial_card.isVisible() is False

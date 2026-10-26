@@ -32,6 +32,10 @@ class Preset:
     label: str
     description: str
     bands: tuple[BiquadBand, ...]
+    #: Request the native Cinema Spatial stage on Linux.  The Windows APO
+    #: backend still applies ``bands`` (a useful tonal profile) and ignores
+    #: this flag, so older platforms stay functional.
+    spatial: bool = False
 
 
 PRESETS: tuple[Preset, ...] = (
@@ -87,6 +91,24 @@ PRESETS: tuple[Preset, ...] = (
             BiquadBand(FilterKind.PEAKING, 3_000.0, 2.5, 1.1),
             BiquadBand(FilterKind.HIGH_SHELF, 10_000.0, 1.5, 0.7),
         ),
+    ),
+    Preset(
+        key="cinema_spatial",
+        label="Cinema Spatial",
+        description=(
+            "Virtual 7.1.4-style room for Linux: HRTF binaural on headphones, "
+            "transaural width + room on stereo speakers. A tonal curve on "
+            "Windows; not object audio."
+        ),
+        bands=(
+            BiquadBand(FilterKind.HIGH_PASS, 25.0, 0.0, 0.707),
+            BiquadBand(FilterKind.LOW_SHELF, 70.0, 3.0, 0.7),
+            BiquadBand(FilterKind.PEAKING, 300.0, -1.0, 1.1),
+            BiquadBand(FilterKind.PEAKING, 1_800.0, 2.0, 1.0),
+            BiquadBand(FilterKind.PEAKING, 3_500.0, 1.5, 1.2),
+            BiquadBand(FilterKind.HIGH_SHELF, 12_000.0, 1.5, 0.7),
+        ),
+        spatial=True,
     ),
     Preset(
         key="songs",

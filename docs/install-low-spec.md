@@ -54,9 +54,11 @@ ssh user@host 'bash -s' < scripts/install-linux.sh
 ```
 
 The script checks 8 GB RAM and 4 GB free disk, installs the minimal PipeWire/Qt
-runtime packages, creates an isolated venv, installs the app, and writes
-`~/.local/bin/sonicfx` plus a desktop entry. It does **not** install the large
-optional LADSPA/LV2 plugin set and does not touch the default sink.
+runtime packages plus `libmysofa1` (the MIT KEMAR SOFA HRTF dataset) and
+`swh-plugins` (the look-ahead limiter), creates an isolated venv, installs the
+app, and writes `~/.local/bin/sonicfx` plus a desktop entry. It does **not**
+install the large optional LADSPA/LV2 plugin set and does not touch the default
+sink.
 
 Useful flags:
 
@@ -104,5 +106,8 @@ after the operating system.
 
 The 8 GB / 4 GB figures cover installation and normal stereo EQ use. They do
 not make the app a Dolby Cinema/Atmos processor. Cinema Immersion is a stereo
-tonal curve (bass, dialogue presence, air) and cannot reconstruct object audio.
-See [`feature-limitations.md`](feature-limitations.md).
+tonal curve (bass, dialogue presence, air). Cinema Spatial is a two-channel
+upmix/virtualiser: HRTF binaural on headphones or transaural processing on
+stereo speakers. Neither can reconstruct object audio or a discrete surround
+mix. See [`feature-limitations.md`](feature-limitations.md) and
+[`cinema-spatial.md`](cinema-spatial.md).

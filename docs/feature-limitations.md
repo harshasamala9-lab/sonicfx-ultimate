@@ -14,10 +14,13 @@ not ship one, and a free local app cannot legally or technically substitute for
 it. SonicFX therefore does **not** decode Atmos, does not claim Atmos
 compatibility, and does not label any mode as Dolby.
 
-What SonicFX does provide is a **stereo tonal Cinema Immersion preset** on the
-native DSP backend. A future native PipeWire HRTF/multichannel virtualiser could
-make stereo content feel wider on headphones or a multichannel device, but that
-would still be an upmix/virtualisation effect, not an Atmos decoder.
+What SonicFX does provide on Linux is **Cinema Spatial**, a native PipeWire
+virtualiser. On headphones it renders a virtual 7.1.4-style ring (front, side,
+rear and four height feeds) through a measured SOFA HRTF and a synthetic room
+response. On stereo speakers it uses transaural width, decorrelated ambience,
+early reflections and a simplified crosstalk-cancellation matrix. It is an
+upmix/virtualisation effect, not an object-audio decoder, and it cannot recover
+channels that were already folded into a stereo mix.
 
 ## Backend split
 
@@ -35,6 +38,18 @@ stereo tonal curve (bass shelf, dialogue presence, mud cut, high air). It is not
 Dolby Cinema, Dolby Atmos, object audio, or a licensed Dolby implementation, and
 it does not claim to recreate a Dolby cinema.
 
+**Cinema Spatial** is the Linux-only native virtualiser. It is honest about
+being a two-channel effect:
+
+| Mode | What it does | What it does not do |
+|---|---|---|
+| Headphones · binaural | 11 virtual speaker feeds (7.1.4-style) convolved with a measured MIT KEMAR SOFA HRTF; band-limited centre extraction; bass management; decorrelated rear/height feeds; synthetic room | Personalised HRTF, head tracking, object rendering, discrete 7.1.4 input |
+| Stereo speakers · transaural | Mid/side ambience, lateral early reflections, synthetic room, and a delayed band-limited negative crossfeed with makeup gain | True rear/height speakers, a wide sweet spot, or object audio |
+| Auto | Picks binaural for headphone/headset metadata and speaker mode for speakers/HDMI | A guarantee when PipeWire metadata is wrong; manual override is always available |
+
+The 7.1.4 label describes the **virtual layout**, not twelve physical outputs
+and not an Atmos bed. The room response is synthetic, not a measured venue.
+
 ## Legitimate claims (verified against live PipeWire 1.6.2 DSP)
 
 * System-wide real-time EQ (parametric/graphic) via PipeWire's in-process
@@ -46,8 +61,14 @@ it does not claim to recreate a Dolby cinema.
   convolver with program-generated IRs) — this is an *effect on stereo content*,
   not a measurement-based room replication.
 * Look-ahead limiting and compression for loudness/speaker safety.
-* Convolver-based surround-virtualisation (Hesuvi/KEMAR simulator stacks) using
-  freely-licensed impulse responses, or our own synthetic program IRs.
+* Native SOFA HRTF binaural virtualisation with the freely licensed MIT KEMAR
+  dataset (`libmysofa1`), 11 virtual speaker feeds, band-limited centre
+  extraction, bass management and all-pass decorrelation.
+* Convolver-based room/ambience processing using our own deterministic synthetic
+  stereo IRs (explicit direct path, asymmetric early reflections, common-mid
+  tail with controlled side spread).
+* Speaker transaural virtualisation: mid/side ambience, lateral early
+  reflections, synthetic room and a simplified crosstalk-cancellation matrix.
 * Crossfeed / binaural-style headphone module (LADSPA bs2b + width/externalisation).
 * Loudness metering (K-weighted, EBU-style) with optional slow loudness matching.
 
@@ -61,10 +82,12 @@ it does not claim to recreate a Dolby cinema.
    channels happens *before* SonicFX and is irrecoverable; our virtualisations
    restore the *cue pattern* (tuning inter-aural level/time differences) —
    an estimate, not channel restoration.
-3. **HRTF note.** Convolver surround-virtualisation uses measurement-free
-   synthetic program IRs unless the user supplies a freely-licensed HRTF/IR
-   set (documented; some free/paid HRTF IR packs exist and can be dropped in).
-   We will not claim "measured head-related transfer function" for synthetic IRs.
+3. **HRTF note.** Binaural mode uses the **measured MIT KEMAR** SOFA dataset
+   shipped by `libmysofa1` (or a user-supplied `.sofa` file / `SONICFX_SOFA`).
+   It is a measured dummy-head HRTF, not a personalised measurement of the
+   listener's ears. Fit varies by person; manual speaker mode is provided when
+   binaural cues do not work for a listener. If no SOFA file is installed,
+   binaural mode is refused rather than silently replaced with a fake HRTF.
 4. **Loudness ≠ quality.** The Dynamics screen explains target-vs-reference
    loudness (e.g., "Internet standard ≈ −14 LUFS for streaming") and that
    "louder" isn't "better". The limiter default prevents pumping.
@@ -90,6 +113,23 @@ it does not claim to recreate a Dolby cinema.
     device has disappeared, the selected output device is used. Force-killing
     the GUI leaves the already-running chain (and default) in place until
     recovery; the app never overwrites system PipeWire configuration.
+11. **Speaker mode has a sweet spot.** The negative crossfeed is a simplified
+    transaural inverse, not a measured room/head cancellation filter. It widens
+    the image near the centre line and can reduce bass in mono; it cannot put
+    sound reliably behind or above a listener. Headphones are the only mode
+    with deliberate rear/height HRTF cues.
+12. **The room is synthetic.** The stereo room IR is generated deterministically
+    from a seeded model (direct path, asymmetric early taps, damped tail). It is
+    not a measured cinema or a convolution of the listener's actual room, and
+    loudspeaker mode deliberately uses a drier tail to avoid double reverb.
+13. **Limiter fallback.** `fastLookaheadLimiter` is provided by `swh-plugins`.
+    When it is absent, the graph uses fixed headroom (0.55×) instead of silently
+    clipping; the UI says so. The fallback is safe but cannot adapt to level.
+14. **CPU and latency.** Binaural mode runs 11 SOFA spatialisers, a stereo
+    convolver and two limiter channels in the PipeWire audio thread. Measured
+    on the development machine at about 10–25 % of one core (speaker mode about
+    6–8 %), but slower CPUs and Bluetooth codecs add their own load/latency.
+    DSP edits restart the chain; there is no live control of the native graph.
 
 ## Windows-specific limits (Equalizer APO backend)
 
@@ -116,6 +156,9 @@ it does not claim to recreate a Dolby cinema.
    validation checklist; do not present the Windows build as "perfect" until
    that checklist is completed.
 7. **Windows backend is EQ-focused.** Per-app routing, PipeWire virtual sinks,
-   and Linux LADSPA/LV2 spatial modules are not available on Windows. The shared
-   presets and fine-tune EQ are available; advanced spatial/dynamics features
-   remain Linux-only until implemented against APO/VST or a native Windows DSP.
+   SOFA HRTF spatialisers, room convolvers and Linux LADSPA/LV2 modules are not
+   available on Windows. The shared presets and fine-tune EQ are available;
+   **Cinema Spatial is Linux-only**, and the Windows Cinema Spatial preset is a
+   useful tonal curve only (the `spatial` flag is ignored by the APO renderer).
+   Advanced spatial/dynamics features remain Linux-only until implemented
+   against APO/VST or a native Windows DSP.

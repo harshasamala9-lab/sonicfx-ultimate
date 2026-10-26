@@ -123,3 +123,34 @@ class TestLoopGuard:
     def test_refuses_non_positive_serial(self) -> None:
         with pytest.raises(WiringError, match="positive"):
             link_playback("sonicfx_out", 0)
+
+
+def test_sink_metadata_feeds_auto_spatial_mode() -> None:
+    node = _node("bluez_output.jbl", "JBL Tuner FM", serial=5, node_id=55)
+    node["info"]["props"].update({"device.id": 130, "audio.channels": "2"})
+    device = {
+        "id": 130,
+        "type": "PipeWire:Interface:Device",
+        "info": {
+            "props": {
+                "media.class": "Audio/Device",
+                "device.name": "bluez_card.jbl",
+                "device.form-factor": "speaker",
+                "device.icon-name": "audio-speakers-bluetooth",
+                "device.api": "bluez5",
+            }
+        },
+    }
+    sink = sink_infos_from_dump([node, device])[0]
+    assert sink.icon_name == "audio-speakers-bluetooth"
+    assert sink.form_factor == "speaker"
+    assert sink.api == "bluez5"
+    assert sink.channels == 2
+
+
+def test_sink_metadata_defaults_are_safe() -> None:
+    sink = sink_infos_from_dump([_node("alsa_output.x", "Unknown")])[0]
+    assert sink.icon_name == ""
+    assert sink.form_factor == ""
+    assert sink.api == ""
+    assert sink.channels == 2

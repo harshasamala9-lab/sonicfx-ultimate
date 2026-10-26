@@ -24,6 +24,7 @@ import re
 from dataclasses import dataclass, replace
 
 from sonicfx.dsp.filters import BiquadBand, FilterKind
+from sonicfx.pipewire.spatial import SpatialSpec
 
 #: Sink/playback/core names end up in SPA JSON unquoted-safe positions, so keep
 #: them ASCII and boring.  They are also the stable identifiers clients target
@@ -91,6 +92,9 @@ class ChainSpec:
     #: uses explicit ``pw-link`` calls and keeps this off; probes/tests keep it
     #: off too so nothing is ever sent to speakers by accident.
     autoconnect: bool = True
+    #: Optional Cinema Spatial stage.  When present, the biquad chain is kept
+    #: as the input tone stage and a native HRTF/room/limiter graph follows it.
+    spatial: SpatialSpec | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "bands", tuple(self.bands))
@@ -103,6 +107,19 @@ class ChainSpec:
             raise ChainSpecError(f"unsupported sample rate: {self.sample_rate}")
         if self.channels not in (1, 2):
             raise ChainSpecError("only mono and stereo chains are supported")
+        if self.spatial is not None:
+            if not isinstance(self.spatial, SpatialSpec):
+                raise ChainSpecError("spatial must be a SpatialSpec")
+            if self.channels != 2:
+                raise ChainSpecError("Cinema Spatial requires a stereo chain")
+            if (
+                self.spatial.mode.value == "binaural"
+                and not self.spatial.resolved_sofa()
+            ):
+                raise ChainSpecError(
+                    "Cinema Spatial binaural mode needs a SOFA HRTF file; "
+                    "install libmysofa1 or set SONICFX_SOFA"
+                )
         for label, value in (
             ("sink_name", self.sink_name),
             ("playback_name", self.playback_name),
@@ -148,6 +165,9 @@ class ChainSpec:
             "core_name": self.core_name,
             "target_sink": self.target_sink,
             "autoconnect": self.autoconnect,
+            "spatial": (
+                self.spatial.fingerprint_payload() if self.spatial is not None else None
+            ),
         }
         blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -169,6 +189,12 @@ def render_chain_conf(spec: ChainSpec, *, generation: int = 0) -> str:
     """
     if generation < 0:
         raise ChainSpecError("generation must be >= 0")
+    if spec.spatial is not None:
+        # Imported lazily: spatial_graph uses the quoting/format helpers defined
+        # in this module, so a top-level import would be circular.
+        from sonicfx.pipewire.spatial_graph import render_spatial_conf
+
+        return render_spatial_conf(spec, generation=generation)
 
     bands = spec.bands or (BiquadBand(FilterKind.PEAKING, 1_000.0, 0.0, 0.5),)
     nodes: list[str] = []

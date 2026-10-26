@@ -127,7 +127,16 @@ def controller(qtbot, tmp_path, monkeypatch):
     monkeypatch.setattr(
         controller_module,
         "list_sinks",
-        lambda: [SinkInfo("alsa_output.test", 1, "Test Speakers", True)],
+        lambda: [
+            SinkInfo(
+                "alsa_output.test",
+                1,
+                "Test Speakers",
+                True,
+                form_factor="speaker",
+                channels=2,
+            )
+        ],
     )
     monkeypatch.setattr(controller_module, "default_sink_name", lambda: None)
     monkeypatch.setattr(controller_module.autostart, "is_enabled", lambda: False)
@@ -320,3 +329,107 @@ def test_meter_worker_stops_with_controller(controller) -> None:
     worker = FakeMeterWorker.instances[-1]
     ctrl.shutdown()
     assert worker.stopped is True
+
+
+def test_cinema_spatial_auto_resolves_speaker_and_builds_spec(
+    qtbot, controller
+) -> None:
+    ctrl, engine, _router = controller
+    ctrl.select_preset("cinema_spatial")
+
+    state = ctrl.spatial_state()
+    assert state.enabled is True
+    assert state.mode == "auto"
+    assert state.effective_mode == "speaker"
+    assert state.room == "medium"
+    assert state.amount == 75
+
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+
+    spec = engine.start_calls[-1][0]
+    assert spec.spatial is not None
+    assert spec.spatial.mode.value == "speaker"
+    assert spec.spatial.room.value == "medium"
+    assert spec.spatial.amount == pytest.approx(0.75)
+    assert spec.spatial.limiter is ctrl._limiter_installed
+
+
+def test_spatial_controls_emit_and_persist(qtbot, controller) -> None:
+    ctrl, _engine, _router = controller
+    ctrl.select_preset("cinema_spatial")
+
+    with qtbot.waitSignal(ctrl.spatial_changed, timeout=2_000):
+        ctrl.set_spatial_room("large")
+    with qtbot.waitSignal(ctrl.spatial_changed, timeout=2_000):
+        ctrl.set_spatial_amount(150)
+    with qtbot.waitSignal(ctrl.spatial_changed, timeout=2_000):
+        ctrl.set_spatial_mode("speaker")
+
+    assert ctrl.spatial_room == "large"
+    assert ctrl.spatial_amount == 100
+    assert ctrl.spatial_mode == "speaker"
+    assert ctrl._settings.value("spatial_room") == "large"
+    assert int(ctrl._settings.value("spatial_amount")) == 100
+    assert ctrl._settings.value("spatial_mode") == "speaker"
+
+
+def test_binaural_mode_requires_and_uses_a_sofa(
+    qtbot, controller, monkeypatch, tmp_path
+) -> None:
+    ctrl, engine, _router = controller
+    ctrl.select_preset("cinema_spatial")
+    sofa = tmp_path / "custom.sofa"
+    sofa.write_bytes(b"SOFA")
+    monkeypatch.setattr(controller_module, "find_sofa_file", lambda: sofa)
+
+    with qtbot.waitSignal(ctrl.spatial_changed, timeout=2_000):
+        ctrl.set_spatial_mode("binaural")
+    assert ctrl.spatial_mode == "binaural"
+    assert ctrl.spatial_available is True
+
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+    spec = engine.start_calls[-1][0]
+    assert spec.spatial is not None
+    assert spec.spatial.mode.value == "binaural"
+    assert spec.spatial.sofa_path == str(sofa)
+
+
+def test_binaural_without_hrtf_is_rejected(qtbot, controller, monkeypatch) -> None:
+    ctrl, _engine, _router = controller
+    ctrl.select_preset("cinema_spatial")
+    monkeypatch.setattr(controller_module, "find_sofa_file", lambda: None)
+
+    with qtbot.waitSignal(ctrl.error, timeout=2_000) as seen:
+        ctrl.set_spatial_mode("binaural")
+
+    assert "SOFA" in seen.args[0]
+    assert ctrl.spatial_mode == "auto"
+
+
+def test_auto_mode_follows_output_metadata(qtbot, controller, monkeypatch) -> None:
+    ctrl, _engine, _router = controller
+    ctrl.select_preset("cinema_spatial")
+    assert ctrl.spatial_effective_mode.value == "speaker"
+
+    monkeypatch.setattr(
+        controller_module,
+        "list_sinks",
+        lambda: [
+            SinkInfo(
+                "alsa_output.headphones",
+                3,
+                "Built-in Headphones",
+                False,
+                icon_name="audio-headphones",
+                form_factor="headset",
+                channels=2,
+            )
+        ],
+    )
+    with qtbot.waitSignal(ctrl.spatial_changed, timeout=2_000):
+        ctrl.set_output("alsa_output.headphones")
+
+    assert ctrl.output == "alsa_output.headphones"
+    assert ctrl.spatial_effective_mode.value == "binaural"

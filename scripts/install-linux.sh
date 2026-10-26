@@ -2,8 +2,9 @@
 # SonicFX Ultimate - Linux one-command installer (Ubuntu / Linux Mint / Debian)
 #
 # Target: 8 GB RAM, 4 GB free disk, a PipeWire desktop session.
-# Installs only the runtime packages the app needs; no audio plugins, no
-# default-device changes, no cloud services.
+# Installs the runtime packages the app needs, including the small MIT KEMAR
+# HRTF dataset and the SWH look-ahead limiter.  No default-device changes and
+# no cloud services.
 #
 # From a checkout:
 #   bash scripts/install-linux.sh
@@ -40,7 +41,7 @@ while [ "$#" -gt 0 ]; do
             APP_DIR="$1"
             ;;
         -h|--help)
-            sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -85,6 +86,8 @@ install_apt_packages() {
         pipewire-pulse \
         wireplumber \
         pulseaudio-utils \
+        libmysofa1 \
+        swh-plugins \
         python3 \
         python3-venv \
         python3-pip \
@@ -218,4 +221,5 @@ if ! pgrep -x pipewire >/dev/null 2>&1; then
     warn "PipeWire is not running in this session. Log out and back in, then launch SonicFX."
 fi
 printf '   On first launch the app starts its PipeWire chain. Stop the engine to bypass it.\n'
-printf '   Cinema Immersion is a stereo tonal profile, not Dolby/Atmos object audio.\n'
+printf '   Cinema Spatial is virtual 7.1.4/HRTF processing, not Dolby/Atmos object audio.\n'
+printf '   Headphones use the MIT KEMAR SOFA HRTF; stereo speakers use transaural processing.\n'

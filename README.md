@@ -17,6 +17,10 @@ and any desktop app.
 * **Cinema Immersion** is available on both platforms: a stereo tonal curve with
   deep bass, focused dialogue and airy highs. It is not object audio and is not
   a Dolby Cinema/Atmos implementation.
+* **Cinema Spatial** is the Linux native virtualiser: a virtual 7.1.4-style
+  HRTF ring for headphones and transaural width/room processing for stereo
+  speakers. It is an upmix effect, not Dolby Atmos or object audio. See
+  [`docs/cinema-spatial.md`](docs/cinema-spatial.md).
 
 ![SonicFX Ultimate window](docs/ui-preview.png)
 
@@ -68,7 +72,8 @@ ssh user@host 'bash -s' < scripts/install-linux.sh
 ```
 
 The installer checks **8 GB RAM / 4 GB free disk**, installs the minimal
-PipeWire/Qt runtime packages, creates `.venv`, installs the app and adds
+PipeWire/Qt runtime packages plus `libmysofa1` (MIT KEMAR HRTF) and
+`swh-plugins` (look-ahead limiter), creates `.venv`, installs the app and adds
 `~/.local/bin/sonicfx` plus a desktop entry. It does not install the large
 optional LADSPA/LV2 plugin set and does not touch the default sink.
 

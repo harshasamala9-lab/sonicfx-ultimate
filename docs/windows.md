@@ -6,7 +6,9 @@ small Equalizer APO configuration file and never processes audio in Python.
 
 This is a system-wide, stereo tonal enhancement. It is **not** Dolby Cinema,
 Dolby Atmos, object audio, or a licensed Dolby product. The shared cinematic
-preset is named **Cinema Immersion** for that reason.
+preset is named **Cinema Immersion** for that reason. The Linux-only **Cinema
+Spatial** HRTF/transaural stage is not available through Equalizer APO; on
+Windows that preset applies its tonal curve only.
 
 ![SonicFX Ultimate on Windows](ui-preview-windows.png)
 

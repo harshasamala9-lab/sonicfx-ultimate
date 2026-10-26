@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -50,6 +51,8 @@ class MainWindow(QMainWindow):
         self._route_active = False
         self._use_default = bool(getattr(controller, "use_default", True))
         self._supports_routing = bool(getattr(controller, "supports_routing", True))
+        self._supports_spatial = bool(getattr(controller, "supports_spatial", False))
+        self._spatial_state = None
         self._login_autostart = False
         self._preset_key = str(getattr(controller, "preset_key", "flat"))
         self._error_text = ""
@@ -59,8 +62,8 @@ class MainWindow(QMainWindow):
         self._preset_cards: dict[str, PresetCard] = {}
 
         self.setWindowTitle("SonicFX Ultimate")
-        self.setMinimumSize(1000, 640)
-        self.resize(1160, 680)
+        self.setMinimumSize(1000, 700)
+        self.resize(1180, 730)
         self._build()
         self._connect()
         self._restore_geometry()
@@ -258,6 +261,77 @@ class MainWindow(QMainWindow):
 
         return left
 
+    def _build_spatial_card(self) -> QFrame:
+        card = QFrame()
+        card.setObjectName("Card")
+        card.setVisible(False)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 10, 18, 10)
+        layout.setSpacing(5)
+
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        title = QLabel("Cinema Spatial")
+        title.setObjectName("CardTitle")
+        header.addWidget(title)
+        self._spatial_effective = QLabel("Virtual room")
+        self._spatial_effective.setObjectName("Muted")
+        header.addWidget(self._spatial_effective)
+        header.addStretch(1)
+        self._spatial_available = QLabel()
+        self._spatial_available.setObjectName("Faint")
+        header.addWidget(self._spatial_available)
+        layout.addLayout(header)
+
+        controls = QHBoxLayout()
+        controls.setSpacing(8)
+        mode_label = QLabel("Mode")
+        mode_label.setObjectName("StatCaption")
+        controls.addWidget(mode_label)
+        self._spatial_mode_combo = QComboBox()
+        self._spatial_mode_combo.addItem("Auto (from device)", "auto")
+        self._spatial_mode_combo.addItem("Headphones · binaural", "binaural")
+        self._spatial_mode_combo.addItem("Stereo speakers · transaural", "speaker")
+        self._spatial_mode_combo.setMinimumWidth(190)
+        self._spatial_mode_combo.setAccessibleName("Cinema Spatial output mode")
+        controls.addWidget(self._spatial_mode_combo)
+
+        room_label = QLabel("Room")
+        room_label.setObjectName("StatCaption")
+        controls.addWidget(room_label)
+        self._spatial_room_combo = QComboBox()
+        self._spatial_room_combo.addItem("Small room", "small")
+        self._spatial_room_combo.addItem("Medium room", "medium")
+        self._spatial_room_combo.addItem("Large cinema", "large")
+        self._spatial_room_combo.setMinimumWidth(125)
+        self._spatial_room_combo.setAccessibleName("Cinema Spatial room size")
+        controls.addWidget(self._spatial_room_combo)
+
+        amount_label = QLabel("Immersion")
+        amount_label.setObjectName("StatCaption")
+        controls.addWidget(amount_label)
+        self._spatial_amount = QSlider(Qt.Orientation.Horizontal)
+        self._spatial_amount.setRange(0, 100)
+        self._spatial_amount.setValue(75)
+        self._spatial_amount.setMinimumWidth(130)
+        self._spatial_amount.setAccessibleName("Cinema Spatial immersion amount")
+        controls.addWidget(self._spatial_amount, 1)
+        self._spatial_amount_value = QLabel("75%")
+        self._spatial_amount_value.setObjectName("Muted")
+        self._spatial_amount_value.setMinimumWidth(38)
+        controls.addWidget(self._spatial_amount_value)
+        layout.addLayout(controls)
+
+        self._spatial_hint = QLabel(
+            "Headphones: measured HRTF over a virtual 7.1.4 ring. Speakers: "
+            "transaural width and room acoustics. This is virtualisation, not "
+            "object audio."
+        )
+        self._spatial_hint.setObjectName("Faint")
+        self._spatial_hint.setWordWrap(True)
+        layout.addWidget(self._spatial_hint)
+        return card
+
     def _build_right_column(self) -> QVBoxLayout:
         right = QVBoxLayout()
         right.setSpacing(14)
@@ -299,6 +373,9 @@ class MainWindow(QMainWindow):
         self._refresh_button.setToolTip("Rescan available hardware outputs")
         output.addWidget(self._refresh_button)
         right.addWidget(output_card)
+
+        self._spatial_card = self._build_spatial_card()
+        right.addWidget(self._spatial_card)
 
         tune_card = QFrame()
         tune_card.setObjectName("Card")
@@ -407,6 +484,16 @@ class MainWindow(QMainWindow):
         self._c.use_default_changed.connect(self._on_use_default)
         self._c.login_autostart_changed.connect(self._on_login_autostart)
         self._c.meter_changed.connect(self._on_meter)
+        if hasattr(self._c, "spatial_changed"):
+            self._c.spatial_changed.connect(self._on_spatial)
+        if self._supports_spatial:
+            self._spatial_mode_combo.currentIndexChanged.connect(
+                self._spatial_mode_changed
+            )
+            self._spatial_room_combo.currentIndexChanged.connect(
+                self._spatial_room_changed
+            )
+            self._spatial_amount.valueChanged.connect(self._spatial_amount_changed)
 
     # -- header / state ----------------------------------------------------
     def _power_clicked(self) -> None:
@@ -543,6 +630,75 @@ class MainWindow(QMainWindow):
             self._bands_layout.addWidget(row)
             self._band_rows.append(row)
         self._bands_layout.addStretch(1)
+
+    # -- Cinema Spatial ----------------------------------------------------
+    def _on_spatial(self, state) -> None:
+        self._spatial_state = state
+        if not self._supports_spatial:
+            self._spatial_card.setVisible(False)
+            return
+        self._spatial_card.setVisible(bool(state.enabled))
+        self._updating = True
+        try:
+            index = self._spatial_mode_combo.findData(state.mode)
+            if index >= 0:
+                self._spatial_mode_combo.setCurrentIndex(index)
+            index = self._spatial_room_combo.findData(state.room)
+            if index >= 0:
+                self._spatial_room_combo.setCurrentIndex(index)
+            self._spatial_amount.setValue(int(state.amount))
+            self._spatial_amount_value.setText(f"{int(state.amount)}%")
+        finally:
+            self._updating = False
+        self._spatial_effective.setText(state.effective_label)
+        self._spatial_available.setText(
+            "" if state.available else "HRTF file not found"
+        )
+        if state.effective_mode == "binaural":
+            if state.available:
+                hint = (
+                    "Headphones: measured SOFA HRTF, virtual 7.1.4 ring and a "
+                    "synthetic room. Keep the volume moderate; HRTF peaks can "
+                    "be intense."
+                )
+            else:
+                hint = (
+                    "Binaural mode needs a SOFA HRTF file. Install libmysofa1 "
+                    "or place a .sofa file in ~/.local/share/sonicfx/hrtf/. "
+                    "Speaker mode needs no HRTF."
+                )
+        else:
+            hint = (
+                "Stereo speakers: transaural width, lateral early reflections "
+                "and a synthetic room. Best in the near-field sweet spot; true "
+                "rear/height needs headphones or a multichannel receiver."
+            )
+        if not state.limiter:
+            hint += (
+                " The SWH look-ahead limiter was not found, so fixed headroom is "
+                "being used; install swh-plugins for peak-safe limiting."
+            )
+        self._spatial_hint.setText(hint)
+
+    def _spatial_mode_changed(self, _index: int) -> None:
+        if self._updating:
+            return
+        mode = self._spatial_mode_combo.currentData()
+        if isinstance(mode, str):
+            self._c.set_spatial_mode(mode)
+
+    def _spatial_room_changed(self, _index: int) -> None:
+        if self._updating:
+            return
+        room = self._spatial_room_combo.currentData()
+        if isinstance(room, str):
+            self._c.set_spatial_room(room)
+
+    def _spatial_amount_changed(self, value: int) -> None:
+        self._spatial_amount_value.setText(f"{int(value)}%")
+        if self._updating:
+            return
+        self._c.set_spatial_amount(int(value))
 
     # -- routing toggles ---------------------------------------------------
     def _route_toggled(self, checked: bool) -> None:

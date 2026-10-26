@@ -13,10 +13,14 @@ import sys
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from sonicfx.logging_setup import get_logger, setup_logging
-from sonicfx.ui.controller import Controller
+from sonicfx.logging_setup import get_logger, log_dir, setup_logging
 from sonicfx.ui.main_window import MainWindow
 from sonicfx.ui.theme import apply_theme
+
+if sys.platform == "win32":
+    from sonicfx.windows.controller import WindowsController as Controller
+else:
+    from sonicfx.ui.controller import Controller
 
 log = get_logger("app")
 
@@ -44,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         QMessageBox.critical(
             None,
             "SonicFX Ultimate",
-            f"SonicFX could not start:\n{exc}\n\nSee ~/.local/state/sonicfx/logs/.",
+            f"SonicFX could not start:\n{exc}\n\nSee {log_dir()}.",
         )
         return 1
 

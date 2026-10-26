@@ -49,6 +49,7 @@ class MainWindow(QMainWindow):
         self._busy = bool(getattr(controller, "busy", False))
         self._route_active = False
         self._use_default = bool(getattr(controller, "use_default", True))
+        self._supports_routing = bool(getattr(controller, "supports_routing", True))
         self._login_autostart = False
         self._preset_key = str(getattr(controller, "preset_key", "flat"))
         self._error_text = ""
@@ -91,8 +92,14 @@ class MainWindow(QMainWindow):
         footer = QHBoxLayout()
         footer.setSpacing(12)
         note = QLabel(
-            "All DSP runs inside PipeWire's real-time thread · stop the engine "
-            "to bypass it completely"
+            str(
+                getattr(
+                    self._c,
+                    "footer_note",
+                    "All DSP runs inside PipeWire's real-time thread · stop the "
+                    "engine to bypass it completely",
+                )
+            )
         )
         note.setObjectName("Faint")
         footer.addWidget(note)
@@ -126,7 +133,14 @@ class MainWindow(QMainWindow):
         title_row.addStretch(1)
         titles.addLayout(title_row)
         subtitle = QLabel(
-            "Cinema-style clarity for everything you play — free, local, real-time."
+            str(
+                getattr(
+                    self._c,
+                    "subtitle",
+                    "Cinema-style clarity for everything you play — free, local, "
+                    "real-time.",
+                )
+            )
         )
         subtitle.setObjectName("AppSubtitle")
         titles.addWidget(subtitle)
@@ -194,7 +208,9 @@ class MainWindow(QMainWindow):
         routing = QVBoxLayout(routing_card)
         routing.setContentsMargins(16, 13, 16, 13)
         routing.setSpacing(7)
-        route_title = QLabel("System routing")
+        route_title = QLabel(
+            str(getattr(self._c, "routing_title", "System routing"))
+        )
         route_title.setObjectName("CardTitle")
         routing.addWidget(route_title)
 
@@ -203,12 +219,31 @@ class MainWindow(QMainWindow):
         self._route_toggle.setAccessibleName(
             "Use SonicFX as the system default output"
         )
+        self._route_toggle.setVisible(self._supports_routing)
         routing.addWidget(self._route_toggle)
 
-        self._route_hint = QLabel()
+        self._route_hint = QLabel(
+            str(
+                getattr(
+                    self._c,
+                    "routing_hint",
+                    "Becomes the default output when the engine starts.",
+                )
+            )
+        )
         self._route_hint.setObjectName("Muted")
         self._route_hint.setWordWrap(True)
         routing.addWidget(self._route_hint)
+
+        self._apo_button = None
+        if not self._supports_routing and hasattr(self._c, "open_configurator"):
+            self._apo_button = QPushButton("Open Equalizer APO")
+            self._apo_button.setObjectName("Ghost")
+            self._apo_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._apo_button.setToolTip(
+                "Open Equalizer APO's Device Selector and enable your outputs"
+            )
+            routing.addWidget(self._apo_button)
 
         self._login_toggle = QCheckBox("Launch SonicFX at login")
         self._login_toggle.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -234,10 +269,18 @@ class MainWindow(QMainWindow):
         output.setSpacing(14)
         output_text = QVBoxLayout()
         output_text.setSpacing(1)
-        output_title = QLabel("Playback device")
+        output_title = QLabel(str(getattr(self._c, "device_label", "Playback device")))
         output_title.setObjectName("CardTitle")
         output_text.addWidget(output_title)
-        output_hint = QLabel("SonicFX sends processed audio to this device.")
+        output_hint = QLabel(
+            str(
+                getattr(
+                    self._c,
+                    "device_hint",
+                    "SonicFX sends processed audio to this device.",
+                )
+            )
+        )
         output_hint.setObjectName("Muted")
         output_text.addWidget(output_hint)
         output.addLayout(output_text)
@@ -310,9 +353,15 @@ class MainWindow(QMainWindow):
         stats = QHBoxLayout()
         stats.setSpacing(24)
         self._stat_state = Stat("Engine state", "Stopped")
-        self._stat_gap = Stat("Restart gap", "—")
-        self._stat_route = Stat("System default", "Off")
-        self._stat_output = Stat("Chain output", "—")
+        self._stat_gap = Stat(
+            str(getattr(self._c, "stat_gap_caption", "Restart gap")), "—"
+        )
+        self._stat_route = Stat(
+            str(getattr(self._c, "stat_route_caption", "System default")), "Off"
+        )
+        self._stat_output = Stat(
+            str(getattr(self._c, "stat_output_caption", "Chain output")), "—"
+        )
         self._stat_peak = Stat("Peak", "—")
         for stat in (
             self._stat_state,
@@ -342,6 +391,8 @@ class MainWindow(QMainWindow):
         self._output_combo.currentIndexChanged.connect(self._combo_changed)
         self._route_toggle.toggled.connect(self._route_toggled)
         self._login_toggle.toggled.connect(self._login_toggled)
+        if self._apo_button is not None:
+            self._apo_button.clicked.connect(self._c.open_configurator)
 
         self._c.status_changed.connect(self._on_status)
         self._c.state_changed.connect(self._on_state)
@@ -408,7 +459,10 @@ class MainWindow(QMainWindow):
         self._stat_state.set_value("Running" if self._running else "Stopped")
         gap = getattr(status, "gap_ms", None) if status is not None else None
         self._stat_gap.set_value(f"{gap:.0f} ms" if gap is not None else "—")
-        self._stat_route.set_value("SonicFX" if self._route_active else "Off")
+        if self._supports_routing:
+            self._stat_route.set_value("SonicFX" if self._route_active else "Off")
+        else:
+            self._stat_route.set_value("APO active" if self._running else "Off")
         device = self._c.output
         description = self._sink_desc.get(device, device)
         self._stat_output.set_value(self._elide(description or "—", 24))
@@ -511,6 +565,11 @@ class MainWindow(QMainWindow):
         self._refresh_route_hint()
 
     def _refresh_route_hint(self) -> None:
+        if not self._supports_routing:
+            self._route_hint.setText(
+                str(getattr(self._c, "routing_hint", "Equalizer APO backend."))
+            )
+            return
         if not self._use_default:
             text = "Your apps keep their normal output device."
         elif self._route_active:
@@ -539,11 +598,19 @@ class MainWindow(QMainWindow):
         self._login_autostart = enabled
         self._login_toggle.setChecked(enabled)
         self._updating = False
-        self._login_hint.setText(
-            "Starts automatically and re-applies your routing."
-            if enabled
-            else "Launch SonicFX manually when you want processing."
-        )
+        if self._supports_routing:
+            hint = (
+                "Starts automatically and re-applies your routing."
+                if enabled
+                else "Launch SonicFX manually when you want processing."
+            )
+        else:
+            hint = (
+                "Starts automatically and re-enables Equalizer APO processing."
+                if enabled
+                else "Launch SonicFX manually when you want processing."
+            )
+        self._login_hint.setText(hint)
 
     # -- output device -----------------------------------------------------
     def _on_sinks(self, sinks) -> None:

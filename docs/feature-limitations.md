@@ -1,8 +1,39 @@
 # Honest capability & limitation statement
 
-SonicFX Ultimate is a free, local, open-source audio enhancement for Linux.
-This page states exactly what it can and cannot do, so the UI/docs never imply
-otherwise. (Requirement: no official-Dolby-equivalence claims, never fake features.)
+SonicFX Ultimate is a free, local, open-source audio enhancement for Linux and
+Windows. This page states exactly what it can and cannot do, so the UI/docs never
+imply otherwise. (Requirement: no official-Dolby-equivalence claims, never fake
+features.)
+
+## Why there is no Dolby Atmos decoder
+
+Dolby Atmos is not a format that can be added by storing more data or writing a
+Python decoder. Object-audio playback needs a licensed Dolby decoder/renderer,
+the original object metadata, and a suitable output layout; Linux/PipeWire does
+not ship one, and a free local app cannot legally or technically substitute for
+it. SonicFX therefore does **not** decode Atmos, does not claim Atmos
+compatibility, and does not label any mode as Dolby.
+
+What SonicFX does provide is a **stereo tonal Cinema Immersion preset** on the
+native DSP backend. A future native PipeWire HRTF/multichannel virtualiser could
+make stereo content feel wider on headphones or a multichannel device, but that
+would still be an upmix/virtualisation effect, not an Atmos decoder.
+
+## Backend split
+
+| Platform | Native real-time engine | Controller role |
+|---|---|---|
+| Linux | PipeWire `filter-chain` biquad DSP | generates config, supervises the child daemon, routes explicitly |
+| Windows 10/11 | Equalizer APO 1.4.x (native C++ APO) | generates `sonicfx.txt`, manages one safe `Include:` line, reads WASAPI loopback for the meter |
+
+On Windows, Equalizer APO is a separate GPL-2.0 project. It is downloaded from
+its official release by the installer; SonicFX does not bundle it and does not
+put Python in the audio callback.
+
+**Cinema Immersion** is the shared cinematic preset on both platforms. It is a
+stereo tonal curve (bass shelf, dialogue presence, mud cut, high air). It is not
+Dolby Cinema, Dolby Atmos, object audio, or a licensed Dolby implementation, and
+it does not claim to recreate a Dolby cinema.
 
 ## Legitimate claims (verified against live PipeWire 1.6.2 DSP)
 
@@ -59,3 +90,32 @@ otherwise. (Requirement: no official-Dolby-equivalence claims, never fake featur
     device has disappeared, the selected output device is used. Force-killing
     the GUI leaves the already-running chain (and default) in place until
     recovery; the app never overwrites system PipeWire configuration.
+
+## Windows-specific limits (Equalizer APO backend)
+
+1. **No default-sink switching.** Windows audio is processed by Equalizer APO on
+   the endpoints enabled in its Device Selector. SonicFX has no routing toggle
+   there and never changes the Windows default output. This is intentional.
+2. **Device Selector is manual.** Equalizer APO does not expose a stable
+   command-line endpoint selector. After installing/rebooting, open
+   **Open Equalizer APO** and tick the desired headphones/speakers/Bluetooth
+   endpoint once.
+3. **Reboot is normally required.** APO drivers are loaded by the Windows audio
+   service. A config can exist before the reboot but remain silent.
+4. **Equalizer APO config writes need ACLs.** The installer grants the current
+   user Modify on the APO `config` folder. If the app is installed another way,
+   Apply may require an elevated run.
+5. **WASAPI loopback meter is best-effort.** The meter reads a loopback monitor
+   stream via the optional `soundcard` package. Some exclusive-mode, unusual USB
+   or Bluetooth drivers may not expose it. When unavailable the UI shows no
+   invented level; DSP processing is independent of the meter.
+6. **Windows physical validation is not in CI.** Config rendering, include
+   add/remove safety, backups and the controller surface have automated tests.
+   Actual Equalizer APO processing and loopback metering still need a Windows
+   10/11 machine with real audio hardware. See `docs/windows.md` for the
+   validation checklist; do not present the Windows build as "perfect" until
+   that checklist is completed.
+7. **Windows backend is EQ-focused.** Per-app routing, PipeWire virtual sinks,
+   and Linux LADSPA/LV2 spatial modules are not available on Windows. The shared
+   presets and fine-tune EQ are available; advanced spatial/dynamics features
+   remain Linux-only until implemented against APO/VST or a native Windows DSP.

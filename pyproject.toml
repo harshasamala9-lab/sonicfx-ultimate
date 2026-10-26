@@ -5,17 +5,29 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sonicfx-ultimate"
 version = "1.0.0"
-description = "Local, free and open-source system-wide audio enhancement for Linux (PipeWire-native DSP: cinema-style virtualization, EQ, dynamics)."
+description = "Free local system-wide audio enhancement: PipeWire-native DSP on Linux and Equalizer APO-native DSP on Windows."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "SonicFX Ultimate contributors" }]
 license = { text = "MIT" }
-keywords = ["audio", "pipewire", "equalizer", "spatial", "virtual-surround", "linux"]
+keywords = [
+    "audio",
+    "pipewire",
+    "equalizer-apo",
+    "windows",
+    "equalizer",
+    "spatial",
+    "virtual-surround",
+    "linux",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: X11 Applications :: Qt",
+    "Environment :: Win32 (MS Windows)",
     "Intended Audience :: End Users/Desktop",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Topic :: Multimedia :: Sound/Audio",
@@ -24,6 +36,9 @@ dependencies = [
     "numpy>=2.0",
     "scipy>=1.14",
     "PySide6>=6.8,<7",
+    # WASAPI loopback monitoring only (never the DSP path). Windows-only so
+    # Linux installs do not pull in a second audio stack.
+    "soundcard>=0.4.3; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

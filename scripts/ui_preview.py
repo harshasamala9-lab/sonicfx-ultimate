@@ -3,9 +3,9 @@
 
 Usage::
 
-    .venv/bin/python scripts/ui_preview.py [output.png]
+    .venv/bin/python scripts/ui_preview.py [--windows] [output.png]
 
-This runs against a fake controller: it never touches PipeWire, never changes
+This runs against a fake controller: it never touches PipeWire, Equalizer APO,
 the default sink and never plays audio. The PNG is used for documentation and
 visual review only.
 """
@@ -36,6 +36,8 @@ from sonicfx.ui.theme import apply_theme  # noqa: E402
 class PreviewController(QObject):
     """Drop-in controller stand-in with realistic sample values."""
 
+    supports_routing = True
+
     status_changed = Signal(object)
     state_changed = Signal(bool)
     busy_changed = Signal(bool)
@@ -52,7 +54,7 @@ class PreviewController(QObject):
 
     def __init__(self) -> None:
         super().__init__()
-        self._preset_key = "best_all_in_one"
+        self._preset_key = "cinema_immersion"
         self._output = "bluez_output.30_C0_1B_D2_9B_F2.1"
         self._running = True
         self._busy = False
@@ -62,7 +64,7 @@ class PreviewController(QObject):
             sink_name="sonicfx_sink",
             generation=4,
             output=self._output,
-            gap_ms=144.6,
+            gap_ms=144.6 if self.supports_routing else 0.0,
         )
 
     @property
@@ -83,7 +85,7 @@ class PreviewController(QObject):
 
     @property
     def use_default(self) -> bool:
-        return True
+        return self.supports_routing
 
     def bootstrap(self) -> None:
         sinks = [
@@ -103,9 +105,9 @@ class PreviewController(QObject):
         self.preset_changed.emit(self._preset_key)
         self.bands_changed.emit(get_preset(self._preset_key).bands)
         self.custom_changed.emit(False)
-        self.use_default_changed.emit(True)
+        self.use_default_changed.emit(self.supports_routing)
         self.login_autostart_changed.emit(True)
-        self.route_changed.emit(True)
+        self.route_changed.emit(self.supports_routing)
         self.status_changed.emit(self._status)
         self.state_changed.emit(self._running)
         # Sample "music playing" peaks so the meter is visible in the preview.
@@ -139,6 +141,7 @@ class PreviewController(QObject):
             )
 
     def set_use_default(self, enabled: bool) -> None:
+        enabled = bool(enabled and self.supports_routing)
         self.use_default_changed.emit(enabled)
         self.route_changed.emit(enabled)
 
@@ -149,13 +152,44 @@ class PreviewController(QObject):
         pass
 
 
+class WindowsPreviewController(PreviewController):
+    """Windows-labelled preview; no APO or WASAPI call is made."""
+
+    supports_routing = False
+    subtitle = "Cinema-style clarity for Windows — native Equalizer APO processing."
+    footer_note = (
+        "DSP runs inside Equalizer APO (native C++) · stop the engine to bypass "
+        "it completely"
+    )
+    routing_title = "Windows audio backend"
+    routing_hint = (
+        "Equalizer APO applies to the outputs you enable in its Device Selector. "
+        "Open it once after installation."
+    )
+    device_label = "Meter output"
+    device_hint = (
+        "Choose the output whose live peak you want to watch. APO processing is "
+        "configured per device in Equalizer APO."
+    )
+    stat_gap_caption = "Apply time"
+    stat_route_caption = "Backend"
+    stat_output_caption = "Meter output"
+
+    def open_configurator(self) -> None:
+        """Preview-only no-op; the real controller opens DeviceSelector.exe."""
+
+
 def main() -> int:
-    output = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("docs/ui-preview.png")
-    app = QApplication(["sonicfx-preview"])
+    windows = "--windows" in sys.argv[1:]
+    positional = [arg for arg in sys.argv[1:] if arg != "--windows"]
+    default_output = "docs/ui-preview-windows.png" if windows else "docs/ui-preview.png"
+    output = Path(positional[0]) if positional else Path(default_output)
+    app = QApplication(["sonicfx-preview-windows" if windows else "sonicfx-preview"])
     app.setApplicationName("SonicFX Ultimate")
     apply_theme(app)
 
-    window = MainWindow(PreviewController())
+    controller = WindowsPreviewController() if windows else PreviewController()
+    window = MainWindow(controller)
     window.resize(1160, 680)
     window.show()
     app.processEvents()

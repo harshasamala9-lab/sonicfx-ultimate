@@ -72,6 +72,23 @@ PRESETS: tuple[Preset, ...] = (
         ),
     ),
     Preset(
+        key="cinema_immersion",
+        label="Cinema Immersion",
+        description=(
+            "Deep cinema-style bass, focused dialogue and airy highs. "
+            "A stereo tonal enhancement — not object audio."
+        ),
+        bands=(
+            BiquadBand(FilterKind.HIGH_PASS, 30.0, 0.0, 0.707),
+            BiquadBand(FilterKind.LOW_SHELF, 65.0, 4.5, 0.7),
+            BiquadBand(FilterKind.PEAKING, 180.0, 1.0, 1.2),
+            BiquadBand(FilterKind.PEAKING, 420.0, -2.0, 0.9),
+            BiquadBand(FilterKind.PEAKING, 1_800.0, 1.5, 1.0),
+            BiquadBand(FilterKind.PEAKING, 3_000.0, 2.5, 1.1),
+            BiquadBand(FilterKind.HIGH_SHELF, 10_000.0, 1.5, 0.7),
+        ),
+    ),
+    Preset(
         key="songs",
         label="Songs / Music",
         description="Fuller bass and airy treble — a gentle smile curve for music.",

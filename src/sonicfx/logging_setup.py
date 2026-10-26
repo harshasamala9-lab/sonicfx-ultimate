@@ -12,10 +12,29 @@ import json
 import logging
 import logging.handlers
 import os
+import sys
 from pathlib import Path
 
-_APP_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "sonicfx"
+
+def _default_app_dir() -> Path:
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or (
+            Path.home() / "AppData" / "Local"
+        )
+        return Path(base) / "SonicFX"
+    return (
+        Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+        / "sonicfx"
+    )
+
+
+_APP_DIR = _default_app_dir()
 _LOG_DIR = _APP_DIR / "logs"
+
+
+def log_dir() -> Path:
+    """Directory containing the rolling JSONL log (platform-appropriate)."""
+    return _LOG_DIR
 _MAX_BYTES = 1_000_000
 _BACKUPS = 3
 

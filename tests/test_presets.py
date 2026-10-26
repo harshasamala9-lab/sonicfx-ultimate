@@ -46,6 +46,26 @@ def test_movies_lifts_dialogue_presence() -> None:
     assert presence, "the movies preset must lift dialogue presence"
 
 
+def test_cinema_immersion_has_cinema_balance() -> None:
+    bands = get_preset("cinema_immersion").bands
+    assert any(
+        band.kind is FilterKind.LOW_SHELF and band.gain_db >= 4.0
+        for band in bands
+    )
+    assert any(
+        2_500.0 <= band.freq <= 3_500.0 and band.gain_db >= 2.0
+        for band in bands
+    )
+    assert any(
+        300.0 <= band.freq <= 600.0 and band.gain_db < 0.0 for band in bands
+    )
+    assert any(
+        band.kind is FilterKind.HIGH_SHELF and band.gain_db > 0.0
+        for band in bands
+    )
+    assert any(band.kind is FilterKind.HIGH_PASS for band in bands)
+
+
 def test_night_reduces_bass_and_treble() -> None:
     bands = get_preset("night").bands
     low = [band for band in bands if band.kind is FilterKind.LOW_SHELF]

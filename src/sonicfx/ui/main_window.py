@@ -1,6 +1,8 @@
 """Main window for SonicFX Ultimate (presentation only)."""
 from __future__ import annotations
 
+import sys
+
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QGuiApplication, QIcon
 from PySide6.QtWidgets import (
@@ -21,8 +23,10 @@ from PySide6.QtWidgets import (
 
 from sonicfx.dsp.filters import BiquadBand
 from sonicfx.logging_setup import get_logger
+from sonicfx.pipewire.tap import monitor_target
 from sonicfx.profiles.presets import PRESETS, get_preset
 from sonicfx.ui.theme import repolish
+from sonicfx.ui.wave import WaveCard, WaveWorker
 from sonicfx.ui.widgets import (
     BandRow,
     CurveView,
@@ -91,6 +95,9 @@ class MainWindow(QMainWindow):
         body.addWidget(self._build_left_column())
         body.addLayout(self._build_right_column(), 1)
         outer.addLayout(body, 1)
+
+        self._wave_worker = WaveWorker(self._wave_target)
+        self._wave_card.bind_worker(self._wave_worker)
 
         footer = QHBoxLayout()
         footer.setSpacing(12)
@@ -377,6 +384,9 @@ class MainWindow(QMainWindow):
         self._spatial_card = self._build_spatial_card()
         right.addWidget(self._spatial_card)
 
+        self._wave_card = WaveCard(self._settings)
+        right.addWidget(self._wave_card)
+
         tune_card = QFrame()
         tune_card.setObjectName("Card")
         tune = QVBoxLayout(tune_card)
@@ -495,7 +505,30 @@ class MainWindow(QMainWindow):
             )
             self._spatial_amount.valueChanged.connect(self._spatial_amount_changed)
 
+        self._wave_worker.start()
+        self._wave_card.start()
+
     # -- header / state ----------------------------------------------------
+    def _wave_target(self) -> str:
+        """Passive monitor target for the Wave Studio analyser (read-only).
+
+        Empty means "no capture": engine off, no output chosen, or a platform
+        without PipeWire ``*.monitor`` nodes. On Windows the Wave Studio card
+        still renders and animates, but there is no audio-analysis feed there
+        yet (that would be WASAPI loopback work, see limitations doc).
+        """
+        if sys.platform != "linux":
+            return ""
+        running = bool(getattr(self._c, "running", False))
+        output = str(getattr(self._c, "output", "") or "")
+        if not running or not output:
+            return ""
+        return monitor_target(output)
+
+    def _refresh_wave_worker(self) -> None:
+        if hasattr(self, "_wave_worker"):
+            self._wave_worker.refresh()
+
     def _power_clicked(self) -> None:
         self._c.set_enabled(not self._running)
 
@@ -506,6 +539,7 @@ class MainWindow(QMainWindow):
     def _on_state(self, running: bool) -> None:
         self._running = running
         self._refresh_status_ui()
+        self._refresh_wave_worker()
 
     def _on_status(self, status) -> None:
         self._status = status
@@ -796,6 +830,7 @@ class MainWindow(QMainWindow):
             self._output_combo.setCurrentIndex(index)
         self._updating = False
         self._refresh_status_ui()
+        self._refresh_wave_worker()
 
     def _combo_changed(self, _index: int) -> None:
         if self._updating:
@@ -819,6 +854,10 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API
         self._settings.setValue("window_geometry", self.saveGeometry())
         self._settings.sync()
+        try:
+            self._wave_card.shutdown()
+        except Exception:  # noqa: BLE001 - closing must always succeed
+            log.exception("wave worker shutdown failed")
         try:
             self._c.shutdown()
         except Exception:  # noqa: BLE001 - closing must always succeed

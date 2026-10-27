@@ -21,6 +21,14 @@ and any desktop app.
   HRTF ring for headphones and transaural width/room processing for stereo
   speakers. It is an upmix effect, not Dolby Atmos or object audio. See
   [`docs/cinema-spatial.md`](docs/cinema-spatial.md).
+* **Wave Studio** is the new audio-reactive visualiser: six modes (Cinematic
+  Wave, Particle Reactor, 3D Cinema Space, Spectrum Nebula, Spectrogram Flow and
+  Light Wave) driven by real FFT/band/transient analysis of a passive monitor
+  capture. It only *observes* a `*.monitor` node with a second read-only
+  capture; it sits nowhere in the DSP path and never blocks the PipeWire audio
+  thread. All visuals are decorative — the wavelength-inspired Light Wave mode
+  is not an optical or spectroscopic measurement, and no mode is a certified
+  level/history measurement tool.
 
 ![SonicFX Ultimate window](docs/ui-preview.png)
 
@@ -179,11 +187,11 @@ It does not change your default audio devices or SonicFX routing.
 src/sonicfx/
   app.py          # Qt bootstrap + platform backend dispatch + error funnel
   autostart.py    # XDG login autostart entry (Linux)
-  ui/             # PySide6 window, theme, widgets, Linux controller
+  ui/             # PySide6 window, theme, widgets, Linux controller, Wave Studio
   audio/          # Linux EngineAPI facade + explicit output routing
   pipewire/       # chain generator, supervised daemon, wiring, default-sink routing
   windows/        # Equalizer APO backend, Windows controller, WASAPI meter, autostart
-  dsp/            # offline design math (coefficients, response curves, IRs)
+  dsp/            # offline design math (coefficients, response curves, IRs, analysis)
   profiles/       # built-in enhancement presets + custom profiles
   database/       # SQLite persistence
   diagnostics/    # environment audit, logs, recovery

@@ -127,6 +127,34 @@ class LevelTap:
         Returns ``(left, right)`` peaks of what arrived; ``(0.0, 0.0)`` on
         silence; ``None`` once the stream is over (then the tap is closed).
         """
+        chunk, closed = self._read(timeout)
+        if closed:
+            return None
+        if not chunk:
+            return (0.0, 0.0)
+        return peak_levels(chunk, self._channels)
+
+    def read_frames(self, timeout: float = 0.15) -> np.ndarray | None:
+        """Wait up to ``timeout`` for interleaved float32 frames.
+
+        Returns an interleaved ``(frames, channels)`` float64 array (empty when
+        nothing arrived within the timeout), and ``None`` once the capture
+        stream is over (then the tap is closed). The buffer is bounded by one
+        OS read of at most ``_READ_FRAMES`` frames; a trailing partial frame is
+        dropped so the result always has whole frames.
+        """
+        chunk, closed = self._read(timeout)
+        if closed:
+            return None
+        if not chunk:
+            return np.empty((0, self._channels), dtype=np.float64)
+        frame_bytes = self._channels * _SAMPLE_BYTES
+        usable = (len(chunk) // frame_bytes) * frame_bytes
+        samples = np.frombuffer(chunk[:usable], dtype="<f4")
+        return samples.reshape(-1, self._channels).astype(np.float64)
+
+    def _read(self, timeout: float) -> tuple[bytes, bool]:
+        """One bounded ``os.read``; returns ``(bytes, stream_closed)``."""
         proc = self._proc
         if proc is None or proc.stdout is None:
             raise TapError("level tap is not started")
@@ -136,16 +164,16 @@ class LevelTap:
             if not ready:
                 if proc.poll() is not None:
                     self.stop()
-                    return None
-                return (0.0, 0.0)  # nothing arrived: the monitor is silent
+                    return b"", True
+                return b"", False
             chunk = os.read(fd, _READ_FRAMES * self._channels * _SAMPLE_BYTES)
+            if not chunk:
+                self.stop()
+                return b"", True
+            return chunk, False
         except OSError:
             self.stop()
-            return None
-        if chunk:
-            return peak_levels(chunk, self._channels)
-        self.stop()  # pw-record exited: `*.monitor` gone or capture denied
-        return None
+            return b"", True
 
     def stop(self) -> None:
         """Terminate the capture process and close the pipe; never raises."""

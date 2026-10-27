@@ -131,3 +131,40 @@ def test_stop_is_idempotent_and_process_is_killed(fake_popen) -> None:
     assert proc.terminated is True
     assert tap._proc is None
     tap.stop()  # second call is a no-op
+
+
+def test_read_frames_respects_silence_eof_and_bound(fake_popen) -> None:
+    """``read_frames`` yields whole ``(frames, channels)`` blocks or ``None``."""
+    proc_holder = fake_popen
+    tap = LevelTap("dev.monitor")
+    tap.start()
+    proc = proc_holder["proc"]
+
+    # Nothing written yet: a quiet monitor reports an empty frame block.
+    assert tap.read_frames(timeout=0.05).shape == (0, 2)
+
+    frames = _stereo([0.5, -0.25, 0.75], [0.125, -0.625, 0.25])
+    proc.write(frames)
+    block = tap.read_frames(timeout=1.0)
+    assert block.shape == (3, 2)
+    assert block[0, 0] == pytest.approx(0.5)
+    assert block[1, 1] == pytest.approx(-0.625)
+    assert block[2, 0] == pytest.approx(0.75)
+
+    # A trailing partial frame is dropped, never passed on as garbage.
+    proc.write(_stereo([0.3], [0.1]) + b"\x42\x00\x00\x00")
+    block = tap.read_frames(timeout=1.0)
+    assert block.shape == (1, 2)
+    assert block[0, 0] == pytest.approx(0.3)
+    assert block[0, 1] == pytest.approx(0.1)
+
+    proc.close_writer()  # pw-record exited: stream over
+    assert tap.read_frames(timeout=1.0) is None
+    with pytest.raises(TapError):
+        tap.read_frames(timeout=0.05)
+
+
+def test_read_frames_rejects_unstarted_tap() -> None:
+    tap = LevelTap("dev.monitor")
+    with pytest.raises(TapError):
+        tap.read_frames(timeout=0.05)

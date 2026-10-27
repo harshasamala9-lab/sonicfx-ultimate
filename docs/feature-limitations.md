@@ -131,6 +131,40 @@ and not an Atmos bed. The room response is synthetic, not a measured venue.
     6–8 %), but slower CPUs and Bluetooth codecs add their own load/latency.
     DSP edits restart the chain; there is no live control of the native graph.
 
+## Wave Studio (visualisation) limits
+
+1. **Decorative, not metrology.** The six Wave Studio modes are audio-reactive
+   artwork driven by FFT magnitude bins, RMS band energy and a transient
+   indicator. They are *not* measurement instruments: no SPL/ISO compliance, no
+   calibrated spectrum, no LUFS display, no RTA certification. The live stereo
+   Peak meter remains the only level readout.
+2. **Light Wave is wavelength-*inspired*.** Colours interpolate across the
+   visible-spectrum hue range for aesthetics. Light Wave performs no optical
+   measurement whatsoever; hue and frequency are only visually paired.
+3. **"3D Cinema Space" is a perspective drawing.** Depth-layered waveform lines
+   are rendered with a 2-D painter; they are not spatial audio positions,
+   measured HRTF geometry, or room acoustics measurements.
+4. **Second passive capture.** On Linux the analysis worker opens a *separate*
+   `pw-record` on the selected output's `*.monitor` node, next to the Peak
+   meter's tap. Recording two monitor streams costs a small amount of extra
+   CPU/IO. It is plain `--raw -` float32 reading; the realtime audio thread is
+   never blocked by Python analysis, which runs in a `QThread` on ~25 Hz
+   bounded snapshots. Spectrogram history is capped (160 columns) and every
+   emitted array is fixed-size.
+5. **Audio reactivity is Linux-only for now.** On Windows the same window
+   shows the Wave Studio card, but the analysis worker has no capture target
+   there (monitor taps are PipeWire `*.monitor` nodes and `pw-record` does not
+   exist on Windows); the card renders its slow idle-motion only. Wiring the
+   analyser to the existing WASAPI loopback meter would be the follow-up work.
+   Every control still functions; the mode captions never imply live data that
+   is not being read.
+6. **Silence is animated gently.** When playback is silent the visualiser keeps
+   a slow idle motion by design so the studio does not look frozen; it is not
+   pretending to audio in that state.
+7. **Frame-rate target, not guarantee.** 60/30/15 FPS and reduced-motion are
+   user settings. Smooth 60 FPS depends on the GPU/compositor; reduced
+   resource usage (FPS Off, reduced motion) is the supported low-spec path.
+
 ## Windows-specific limits (Equalizer APO backend)
 
 1. **No default-sink switching.** Windows audio is processed by Equalizer APO on

@@ -11,6 +11,7 @@ from PySide6.QtCore import QObject, Qt, Signal  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from sonicfx.audio.engine import EngineStatus  # noqa: E402
+from sonicfx.pipewire import tap as tap_module  # noqa: E402
 from sonicfx.pipewire.wiring import SinkInfo  # noqa: E402
 from sonicfx.profiles.presets import get_preset  # noqa: E402
 from sonicfx.ui.main_window import MainWindow  # noqa: E402
@@ -114,8 +115,18 @@ class FakeController(QObject):
         self.shutdown_calls += 1
 
 
+def _sandbox_process_spawning(monkeypatch) -> None:
+    """Offscreen tests must never spawn pw-record against the real system."""
+
+    def _deny_popen(*args, **kwargs):
+        raise OSError("pw-record is not available in offscreen tests")
+
+    monkeypatch.setattr(tap_module.subprocess, "Popen", _deny_popen)
+
+
 def _window(qtbot, monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    _sandbox_process_spawning(monkeypatch)
     app = QApplication.instance() or QApplication([])
     apply_theme(app)
     controller = FakeController()
@@ -258,6 +269,7 @@ class SpatialFakeController(FakeController):
 
 def _spatial_window(qtbot, monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    _sandbox_process_spawning(monkeypatch)
     app = QApplication.instance() or QApplication([])
     apply_theme(app)
     controller = SpatialFakeController()

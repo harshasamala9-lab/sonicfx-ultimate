@@ -136,4 +136,4 @@ and common-mid room tail keep it from collapsing into a diffuse cloud.
 | No rear/height on speakers | expected — use headphones for deliberate binaural cues |
 | Thin bass on speakers | speaker mode high-passes the mains; use the preset's low shelf or a subwoofer, and check the output device |
 | Too wide/phasey | lower **Immersion**, use a smaller room, or choose speaker mode |
-| Auto picks the wrong mode | select Headphones or Speakers manually; metadata is best-effort |
+| Auto picks the wrong mode | select Headphones or Speakers manually, or use the **Headphones** preset, which pins binaural; metadata is best-effort |

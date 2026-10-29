@@ -25,6 +25,20 @@ The card is hidden for ordinary tonal presets and on Windows. On Windows the
 Cinema Spatial preset still applies its tonal bands through Equalizer APO, but
 the native spatial stage is not rendered.
 
+### Headphones preset
+
+The **Headphones** preset on Linux drives the same native binaural renderer,
+but its mode is fixed to **Headphones · binaural**. That pinning is deliberate:
+`Auto` can only infer the device class from PipeWire/WirePlumber metadata, and a
+pair of headphones plugged into an analog-stereo or Bluetooth jack is often
+reported as a generic speaker. With the Headphones preset selected, the HRTF
+stage runs on every stereo output instead of waiting for the metadata to agree.
+Room and Immersion still apply. The mode selector is disabled while that preset
+is active; choose **Cinema Spatial** to return to Auto or speaker mode.
+
+On Windows the Headphones preset applies only its tonal bands, like the other
+shared presets. Equalizer APO has no SOFA HRTF stage.
+
 ## What the native graph does
 
 ### Binaural (headphones)

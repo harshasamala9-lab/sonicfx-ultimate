@@ -458,3 +458,41 @@ def test_speaker_mode_keeps_sofa_available_for_later_switch(
     spec = engine.start_calls[-1][0]
     assert spec.spatial is not None
     assert spec.spatial.mode.value == "speaker"
+
+
+def test_headphones_preset_uses_binaural_on_every_output(
+    qtbot, controller, monkeypatch, tmp_path
+) -> None:
+    ctrl, engine, _router = controller
+    # The fixture output is a speaker, which would normally make Auto choose
+    # speaker mode.  The Headphones preset must ignore that and pin binaural.
+    sofa = tmp_path / "custom.sofa"
+    sofa.write_bytes(b"SOFA")
+    monkeypatch.setattr(controller_module, "find_sofa_file", lambda: sofa)
+
+    with qtbot.waitSignal(ctrl.spatial_changed, timeout=2_000):
+        ctrl.select_preset("headphones")
+
+    state = ctrl.spatial_state()
+    assert state.enabled is True
+    assert state.fixed_mode is True
+    assert state.available is True
+    assert state.mode == "binaural"
+    assert state.effective_mode == "binaural"
+    assert ctrl.spatial_effective_mode.value == "binaural"
+
+    # A manual mode change cannot silently take the Headphones preset off the
+    # HRTF path; the window also disables the selector.
+    ctrl.set_spatial_mode("speaker")
+    assert ctrl.spatial_effective_mode.value == "binaural"
+
+    with qtbot.waitSignal(ctrl.status_changed, timeout=4_000):
+        ctrl.start_engine()
+    spec = engine.start_calls[-1][0]
+    assert spec.spatial is not None
+    assert spec.spatial.mode.value == "binaural"
+    assert spec.spatial.sofa_path == str(sofa)
+
+    # Cinema Spatial keeps the user's own Auto/manual choice.
+    ctrl.select_preset("cinema_spatial")
+    assert ctrl.spatial_state().fixed_mode is False

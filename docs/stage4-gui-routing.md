@@ -15,7 +15,7 @@ window uses the same layout and values.*
 | Area | Implementation |
 |---|---|
 | Window | PySide6 single-window "SonicFX Ultimate" UI, dark theme, offscreen-renderable |
-| Presets | 9 built-in cards (including **Best All In One**); selecting one applies its real band set |
+| Presets | 12 built-in cards (including **Best All In One** and **Peaceful**); selecting one applies its real band set |
 | Fine tune | One gain slider per preset band (0.5 dB steps, ±12 dB), live designed-response curve |
 | Engine controls | Start/Stop in the header; status chip and stats reflect observed engine state |
 | Output device | Real sink picker (`pw-dump`) + refresh; explicit `pw-link` to the chosen device |

@@ -69,7 +69,9 @@ and not an Atmos bed. The room response is synthetic, not a measured venue.
   tail with controlled side spread).
 * Speaker transaural virtualisation: mid/side ambience, lateral early
   reflections, synthetic room and a simplified crosstalk-cancellation matrix.
-* Crossfeed / binaural-style headphone module (LADSPA bs2b + width/externalisation).
+* Binaural headphone rendering: the Headphones preset pins the same native
+  SOFA HRTF stage as Cinema Spatial on every Linux stereo output, regardless of
+  device metadata. It is a measured dummy-head HRTF, not a personalised one.
 * Loudness metering (K-weighted, EBU-style) with optional slow loudness matching.
 
 ## Explicit limits (stated in-app on the relevant screens)
@@ -192,7 +194,7 @@ and not an Atmos bed. The room response is synthetic, not a measured venue.
 7. **Windows backend is EQ-focused.** Per-app routing, PipeWire virtual sinks,
    SOFA HRTF spatialisers, room convolvers and Linux LADSPA/LV2 modules are not
    available on Windows. The shared presets and fine-tune EQ are available;
-   **Cinema Spatial is Linux-only**, and the Windows Cinema Spatial preset is a
-   useful tonal curve only (the `spatial` flag is ignored by the APO renderer).
-   Advanced spatial/dynamics features remain Linux-only until implemented
-   against APO/VST or a native Windows DSP.
+   **Cinema Spatial and the Headphones HRTF stage are Linux-only**, and on
+   Windows both presets apply their tonal curves only (the `spatial` flag is
+   ignored by the APO renderer). Advanced spatial/dynamics features remain
+   Linux-only until implemented against APO/VST or a native Windows DSP.

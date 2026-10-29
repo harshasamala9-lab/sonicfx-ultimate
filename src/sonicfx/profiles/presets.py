@@ -1,4 +1,4 @@
-"""Built-in enhancement presets (movies, songs, night, headphones, …).
+"""Built-in enhancement presets (movies, songs, night, peaceful, headphones, …).
 
 Each preset is a ready-made tuple of :class:`~sonicfx.dsp.filters.BiquadBand`
 objects; the chain builder renders it into a real PipeWire filter graph. Values
@@ -32,10 +32,24 @@ class Preset:
     label: str
     description: str
     bands: tuple[BiquadBand, ...]
-    #: Request the native Cinema Spatial stage on Linux.  The Windows APO
-    #: backend still applies ``bands`` (a useful tonal profile) and ignores
-    #: this flag, so older platforms stay functional.
+    #: Request the native spatial stage on Linux.  The Windows APO backend
+    #: still applies ``bands`` (a useful tonal profile) and ignores this flag,
+    #: so older platforms stay functional.
     spatial: bool = False
+    #: Optional spatial mode owned by the preset.  ``None`` lets the user's
+    #: Auto/manual choice decide.  ``"binaural"`` pins the preset to the HRTF
+    #: headphone renderer on every output device, which is what the Headphones
+    #: preset needs: device metadata is not always able to tell us that a pair
+    #: of headphones is connected.
+    preferred_spatial_mode: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.preferred_spatial_mode not in (None, "auto", "binaural", "speaker"):
+            raise ValueError(
+                "preferred_spatial_mode must be None, 'auto', 'binaural' or 'speaker'"
+            )
+        if self.preferred_spatial_mode is not None and not self.spatial:
+            raise ValueError("preferred_spatial_mode requires spatial=True")
 
 
 PRESETS: tuple[Preset, ...] = (
@@ -135,17 +149,34 @@ PRESETS: tuple[Preset, ...] = (
         ),
     ),
     Preset(
+        key="peaceful",
+        label="Peaceful",
+        description=(
+            "Calm, low-fatigue curve for quiet listening on any output device."
+        ),
+        bands=(
+            BiquadBand(FilterKind.HIGH_PASS, 30.0, 0.0, 0.707),
+            BiquadBand(FilterKind.LOW_SHELF, 85.0, 1.5, 0.7),
+            BiquadBand(FilterKind.PEAKING, 350.0, -1.5, 1.0),
+            BiquadBand(FilterKind.PEAKING, 2_500.0, 1.0, 1.1),
+            BiquadBand(FilterKind.HIGH_SHELF, 10_000.0, -1.5, 0.7),
+        ),
+    ),
+    Preset(
         key="headphones",
         label="Headphones",
         description=(
-            "Tames sibilance and adds weight for small drivers (crossfeed and "
-            "HRTF-style spatialisation arrive with the Stage 5 headphone block)."
+            "Real HRTF binaural stage plus a gentle sibilance tamer. Linux uses "
+            "the measured SOFA headphone renderer on any stereo output; Windows "
+            "applies the tonal curve only."
         ),
         bands=(
             BiquadBand(FilterKind.LOW_SHELF, 70.0, 2.0, 0.7),
             BiquadBand(FilterKind.PEAKING, 3_200.0, -1.5, 1.6),
             BiquadBand(FilterKind.HIGH_SHELF, 9_500.0, -1.5, 0.7),
         ),
+        spatial=True,
+        preferred_spatial_mode="binaural",
     ),
     Preset(
         key="voice",

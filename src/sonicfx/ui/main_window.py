@@ -278,9 +278,9 @@ class MainWindow(QMainWindow):
 
         header = QHBoxLayout()
         header.setSpacing(10)
-        title = QLabel("Cinema Spatial")
-        title.setObjectName("CardTitle")
-        header.addWidget(title)
+        self._spatial_title = QLabel("Cinema Spatial")
+        self._spatial_title.setObjectName("CardTitle")
+        header.addWidget(self._spatial_title)
         self._spatial_effective = QLabel("Virtual room")
         self._spatial_effective.setObjectName("Muted")
         header.addWidget(self._spatial_effective)
@@ -300,7 +300,7 @@ class MainWindow(QMainWindow):
         self._spatial_mode_combo.addItem("Headphones · binaural", "binaural")
         self._spatial_mode_combo.addItem("Stereo speakers · transaural", "speaker")
         self._spatial_mode_combo.setMinimumWidth(190)
-        self._spatial_mode_combo.setAccessibleName("Cinema Spatial output mode")
+        self._spatial_mode_combo.setAccessibleName("Spatial output mode")
         controls.addWidget(self._spatial_mode_combo)
 
         room_label = QLabel("Room")
@@ -311,7 +311,7 @@ class MainWindow(QMainWindow):
         self._spatial_room_combo.addItem("Medium room", "medium")
         self._spatial_room_combo.addItem("Large cinema", "large")
         self._spatial_room_combo.setMinimumWidth(125)
-        self._spatial_room_combo.setAccessibleName("Cinema Spatial room size")
+        self._spatial_room_combo.setAccessibleName("Spatial room size")
         controls.addWidget(self._spatial_room_combo)
 
         amount_label = QLabel("Immersion")
@@ -321,7 +321,7 @@ class MainWindow(QMainWindow):
         self._spatial_amount.setRange(0, 100)
         self._spatial_amount.setValue(75)
         self._spatial_amount.setMinimumWidth(130)
-        self._spatial_amount.setAccessibleName("Cinema Spatial immersion amount")
+        self._spatial_amount.setAccessibleName("Spatial immersion amount")
         controls.addWidget(self._spatial_amount, 1)
         self._spatial_amount_value = QLabel("75%")
         self._spatial_amount_value.setObjectName("Muted")
@@ -331,8 +331,9 @@ class MainWindow(QMainWindow):
 
         self._spatial_hint = QLabel(
             "Headphones: measured HRTF over a virtual 7.1.4 ring. Speakers: "
-            "transaural width and room acoustics. This is virtualisation, not "
-            "object audio."
+            "transaural width and room acoustics. The Headphones preset pins "
+            "this stage to binaural on every output. This is virtualisation, "
+            "not object audio."
         )
         self._spatial_hint.setObjectName("Faint")
         self._spatial_hint.setWordWrap(True)
@@ -672,6 +673,15 @@ class MainWindow(QMainWindow):
             self._spatial_card.setVisible(False)
             return
         self._spatial_card.setVisible(bool(state.enabled))
+        fixed = bool(getattr(state, "fixed_mode", False))
+        self._spatial_title.setText("Headphone HRTF" if fixed else "Cinema Spatial")
+        self._spatial_mode_combo.setEnabled(not fixed)
+        self._spatial_mode_combo.setToolTip(
+            "The Headphones preset always uses binaural HRTF. Choose "
+            "Cinema Spatial to switch modes."
+            if fixed
+            else "Choose Auto, Headphones · binaural, or Stereo speakers."
+        )
         self._updating = True
         try:
             index = self._spatial_mode_combo.findData(state.mode)
@@ -700,6 +710,12 @@ class MainWindow(QMainWindow):
                     "Binaural mode needs a SOFA HRTF file. Install libmysofa1 "
                     "or place a .sofa file in ~/.local/share/sonicfx/hrtf/. "
                     "Speaker mode needs no HRTF."
+                )
+            if fixed:
+                hint += (
+                    " The Headphones preset is pinned to binaural so the HRTF "
+                    "stage works on every output device; choose Cinema Spatial "
+                    "to switch modes."
                 )
         else:
             hint = (

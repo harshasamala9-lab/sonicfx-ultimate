@@ -229,17 +229,20 @@ class SpatialFakeController(FakeController):
         self.spatial_calls: list[tuple[str, object]] = []
 
     def _state(self) -> SpatialUiState:
-        effective = (
+        preset = get_preset(self._preset_key)
+        fixed = preset.preferred_spatial_mode is not None
+        effective = preset.preferred_spatial_mode or (
             "binaural" if self._spatial_mode == "binaural" else "speaker"
         )
         return SpatialUiState(
-            enabled=get_preset(self._preset_key).spatial,
-            mode=self._spatial_mode,
+            enabled=preset.spatial,
+            mode=effective if fixed else self._spatial_mode,
             effective_mode=effective,
             room=self._spatial_room,
             amount=self._spatial_amount,
             available=True,
             limiter=True,
+            fixed_mode=fixed,
         )
 
     def bootstrap(self) -> None:
@@ -319,3 +322,19 @@ def test_spatial_card_hides_for_tonal_preset(qtbot, monkeypatch, tmp_path) -> No
     QApplication.processEvents()
 
     assert window._spatial_card.isVisible() is False
+
+
+def test_headphones_preset_shows_fixed_hrtf_mode(
+    qtbot, monkeypatch, tmp_path
+) -> None:
+    controller, window = _spatial_window(qtbot, monkeypatch, tmp_path)
+
+    controller.select_preset("headphones")
+    QApplication.processEvents()
+
+    assert window._spatial_card.isVisible() is True
+    assert window._spatial_title.text() == "Headphone HRTF"
+    assert window._spatial_effective.text() == "Headphones · binaural"
+    assert window._spatial_mode_combo.currentData() == "binaural"
+    assert window._spatial_mode_combo.isEnabled() is False
+    assert "pinned to binaural" in window._spatial_hint.text()

@@ -74,6 +74,39 @@ def test_night_reduces_bass_and_treble() -> None:
     assert high and high[0].gain_db < 0.0
 
 
+def test_peaceful_is_a_gentle_all_device_preset() -> None:
+    preset = get_preset("peaceful")
+    assert preset.spatial is False
+    assert preset.preferred_spatial_mode is None
+    assert any(band.kind is FilterKind.HIGH_PASS for band in preset.bands)
+    assert any(
+        band.kind is FilterKind.LOW_SHELF and 0.0 < band.gain_db <= 2.0
+        for band in preset.bands
+    )
+    assert any(
+        band.kind is FilterKind.HIGH_SHELF and band.gain_db < 0.0
+        for band in preset.bands
+    )
+
+
+def test_headphones_pins_the_binaural_hrtf_stage() -> None:
+    preset = get_preset("headphones")
+    assert preset.spatial is True
+    assert preset.preferred_spatial_mode == "binaural"
+
+
+def test_preferred_spatial_modes_are_valid() -> None:
+    for preset in PRESETS:
+        assert preset.preferred_spatial_mode in (
+            None,
+            "auto",
+            "binaural",
+            "speaker",
+        )
+        if preset.preferred_spatial_mode is not None:
+            assert preset.spatial is True
+
+
 def test_best_all_in_one_balances_bass_presence_and_air() -> None:
     bands = get_preset("best_all_in_one").bands
     assert any(

@@ -2,8 +2,8 @@
 
 A free, local, open-source **system-wide audio enhancer for Linux and Windows**.
 It applies real-time parametric EQ presets (all-in-one, cinema immersion, music,
-night, headphones, voice, gaming, bass) to live audio from browsers, VLC, games
-and any desktop app.
+night, peaceful, headphones, voice, gaming, bass) to live audio from browsers,
+VLC, games and any desktop app.
 
 * **Linux** uses PipeWire's native C `filter-chain` DSP. It can optionally become
   your default output so everything is processed, with the previous default
@@ -21,6 +21,12 @@ and any desktop app.
   HRTF ring for headphones and transaural width/room processing for stereo
   speakers. It is an upmix effect, not Dolby Atmos or object audio. See
   [`docs/cinema-spatial.md`](docs/cinema-spatial.md).
+* **Headphones** uses the same measured-SOFA binaural HRTF stage on Linux, but
+  pins the mode to binaural so it works on any stereo output even when device
+  metadata does not identify headphones. On Windows it applies its tonal curve
+  only, because Equalizer APO has no SOFA HRTF renderer.
+* **Peaceful** is a gentle, low-fatigue EQ curve for quiet listening. It is
+  device-independent and needs no spatial stage.
 * **Wave Studio** is the new audio-reactive visualiser: six modes (Cinematic
   Wave, Particle Reactor, 3D Cinema Space, Spectrum Nebula, Spectrogram Flow and
   Light Wave) driven by real FFT/band/transient analysis of a passive monitor

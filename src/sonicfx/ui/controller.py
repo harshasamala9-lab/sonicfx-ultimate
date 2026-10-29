@@ -73,7 +73,7 @@ def _db_to_amp(db: float) -> float:
 
 @dataclass(frozen=True)
 class SpatialUiState:
-    """Everything the window needs to present Cinema Spatial honestly."""
+    """Everything the window needs to present spatial processing honestly."""
 
     enabled: bool
     mode: str
@@ -82,6 +82,9 @@ class SpatialUiState:
     amount: int
     available: bool
     limiter: bool
+    #: The active preset owns the mode (for example the Headphones preset is
+    #: always binaural).  The window disables the mode selector in that case.
+    fixed_mode: bool = False
 
     @property
     def effective_label(self) -> str:
@@ -384,6 +387,12 @@ class Controller(QObject):
 
     @property
     def spatial_effective_mode(self) -> SpatialMode:
+        # Some presets own their spatial mode.  The Headphones preset must use
+        # the HRTF renderer even when PipeWire reports a speaker/unknown device
+        # (for example when headphones are plugged into an analog-stereo jack).
+        preset_mode = get_preset(self._preset_key).preferred_spatial_mode
+        if preset_mode is not None:
+            return SpatialMode(preset_mode)
         if self._spatial_mode != SpatialMode.AUTO.value:
             return SpatialMode(self._spatial_mode)
         sink = next((item for item in self._sinks if item.name == self._output), None)
@@ -398,14 +407,19 @@ class Controller(QObject):
 
     def spatial_state(self) -> SpatialUiState:
         preset = get_preset(self._preset_key)
+        effective = self.spatial_effective_mode
+        fixed = preset.preferred_spatial_mode is not None
         return SpatialUiState(
             enabled=preset.spatial,
-            mode=self._spatial_mode,
-            effective_mode=self.spatial_effective_mode.value,
+            # A fixed preset reports the mode it actually uses, so the combo
+            # never shows a misleading Auto/Speaker choice.
+            mode=effective.value if fixed else self._spatial_mode,
+            effective_mode=effective.value,
             room=self._spatial_room,
             amount=self._spatial_amount,
             available=self.spatial_available,
             limiter=self._limiter_installed,
+            fixed_mode=fixed,
         )
 
     def login_autostart_enabled(self) -> bool:
@@ -518,6 +532,9 @@ class Controller(QObject):
             return
         self._preset_key = key
         self._bands = preset.bands
+        # Re-discover on preset changes so an HRTF installed (or removed) while
+        # the app is running is reflected in the spatial card immediately.
+        self._sofa_path = find_sofa_file()
         self._settings.setValue("preset", key)
         self._persist_bands()
         self.preset_changed.emit(key)
@@ -552,14 +569,20 @@ class Controller(QObject):
             self._schedule_apply()
 
     def set_spatial_mode(self, mode: str) -> None:
-        """Override Auto/Headphones/Speakers for the Cinema Spatial preset."""
+        """Override Auto/Headphones/Speakers for the spatial stage."""
         try:
             value = SpatialMode(mode)
         except ValueError:
             return
+        if get_preset(self._preset_key).preferred_spatial_mode is not None:
+            # The preset owns the mode (Headphones is always binaural).  The
+            # window disables the selector, but keep this guard for programmatic
+            # callers and stale UI events.
+            self.spatial_changed.emit(self.spatial_state())
+            return
         if value is SpatialMode.BINAURAL and find_sofa_file() is None:
             self._show_error(
-                "Binaural Cinema Spatial needs a SOFA HRTF file. Install "
+                "Binaural spatial processing needs a SOFA HRTF file. Install "
                 "libmysofa1 or place a .sofa file in "
                 "~/.local/share/sonicfx/hrtf/."
             )
@@ -856,7 +879,7 @@ class Controller(QObject):
                 sofa = find_sofa_file()
                 if sofa is None:
                     raise RuntimeError(
-                        "Cinema Spatial binaural mode needs a SOFA HRTF file. "
+                        "Binaural spatial processing needs a SOFA HRTF file. "
                         "Install libmysofa1 or place a .sofa file in "
                         "~/.local/share/sonicfx/hrtf/."
                     )

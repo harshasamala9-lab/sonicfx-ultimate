@@ -69,14 +69,14 @@ the audit flags it. Nothing fakes it.
 | Mid-side | builtin ops: mono mix (`M=0.5(L+R)`), side (`S=0.5(L−R)`), re-encode (gain ops) |
 | Reverb / ambience | Calf Reverb LV2 (live size/decay/damping/wet) or convolver with program-generated IR |
 | Virtual surround (HRTF-style) | native `spatializer` SOFA nodes (MIT KEMAR via libmysofa), 11 virtual 7.1.4-style feeds, band-limited centre extraction, bass management, all-pass decorrelation, stereo `convolver` room IR; speaker mode uses transaural ambience/CTC. Virtualisation, not object audio (no false Atmos claims) |
-| Crossfeed / headphone | LADSPA `bs2b` (+ optional width/externalization shelf) |
+| Headphone HRTF | native SOFA `spatializer` (MIT KEMAR), pinned to binaural by the Headphones preset on Linux |
 | Compressor / limiter | Calf Compressor/Limiter LV2 (or swh `fast_lookahead_limiter_1913`, Zam fallbacks) with GR estimation on the meter tap |
 | Dialogue clarity / boost | mid-Q peaking pair (1.6–3.2 kHz) + gentle compressor + level-match stage; presets for films |
 | Night mode | low-ratio compressor + lookahead limiter + bass trim, bounded to avoid pumping |
 | Bass punch | low-shelf (60–90 Hz) + optional Calf bass-enhancer harmonic stage, limiter-protected |
 | Concert hall | Calf Reverb LV2 (decay 1.2–2.4 s, damping, wet mix presets) |
 | Loudness match | meter tap LUFS-I → slow target gain (bounded ±6 dB, no upward compression) |
-| Presets | Best All In One, Movies, Songs, Night, Headphones, Podcast/Voice, Gaming, Bass, Flat + user presets |
+| Presets | Best All In One, Movies, Songs, Night, Peaceful, Headphones, Podcast/Voice, Gaming, Bass, Flat + user presets |
 | Noise reduction (mic) | optional, opt-in build of rnnoise-LADSPA (documented, not bundled) |
 | Loudness | meter tap: K-weighted LUFS-I (Python, 100 ms update on tap only) + optional slow target-gain correction |
 | Meters / diagnostics | bounded low-rate monitor capture (not the audio path); GR estimated, clip detection from tap peaks |
